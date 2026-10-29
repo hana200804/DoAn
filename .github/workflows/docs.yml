@@ -1,0 +1,34 @@
+name: Docs
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdown:
+    name: Kiểm tra Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Định dạng Markdown
+        run: npx --yes markdownlint-cli2@0.13.0 "**/*.md"
+
+      - name: Liên kết nội bộ
+        uses: lycheeverse/lychee-action@v1
+        with:
+          args: --offline --no-progress "./**/*.md"
+          fail: true

@@ -1,0 +1,62 @@
+name: Báo lỗi
+description: Báo một lỗi trong ứng dụng, backend, web quản trị hoặc mô hình
+title: "[Bug] "
+labels: ["type:bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Thành phần
+      options:
+        - mobile
+        - backend
+        - ai
+        - web-admin
+        - infra
+        - docs
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Mức độ
+      description: Theo docs/08-kiem-thu.md §10
+      options:
+        - S1 · Nghiêm trọng
+        - S2 · Cao
+        - S3 · Trung bình
+        - S4 · Thấp
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Mô tả lỗi
+      description: Điều gì đã xảy ra?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Các bước tái hiện
+      placeholder: |
+        1. Mở màn hình ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Kết quả mong đợi
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Môi trường
+      description: Thiết bị, phiên bản Android, phiên bản app, phiên bản mô hình, commit
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      render: shell

@@ -1,0 +1,34 @@
+name: Tính năng
+description: Một tính năng gắn với yêu cầu trong đặc tả (FR-xx)
+title: "[Feature] "
+labels: ["type:feature"]
+body:
+  - type: input
+    id: requirement
+    attributes:
+      label: Mã yêu cầu
+      description: Mã trong docs/02-dac-ta-yeu-cau.md, ví dụ FR-03
+      placeholder: FR-
+    validations:
+      required: true
+  - type: textarea
+    id: story
+    attributes:
+      label: User story
+      placeholder: Là <tác nhân>, tôi muốn <khả năng> để <lợi ích>
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Tiêu chí chấp nhận
+      description: Sao chép từ SRS §7 hoặc bổ sung
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Thiết kế liên quan
+      description: Liên kết tới tài liệu, ADR, API, CSDL

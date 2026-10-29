@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Tài liệu dự án
+    url: https://github.com/hana200804/DoAn/tree/dev/docs
+    about: Đọc đặc tả yêu cầu, kiến trúc và thiết kế trước khi tạo issue.

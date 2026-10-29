@@ -1,0 +1,60 @@
+# ===== Chung =====
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+.fleet/
+
+# ===== Android / Kotlin (mobile) =====
+mobile/**/build/
+mobile/.gradle/
+mobile/local.properties
+mobile/**/*.apk
+mobile/**/*.aab
+mobile/captures/
+*.keystore
+*.jks
+
+# ===== Java / Spring Boot (backend) =====
+backend/**/target/
+backend/**/build/
+backend/**/.gradle/
+*.class
+
+# ===== Node / TypeScript (web-admin) =====
+web-admin/node_modules/
+web-admin/dist/
+web-admin/coverage/
+
+# ===== Python / AI =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Dữ liệu và trọng số không nằm trong git (xem docs/05-du-lieu.md)
+ai/data/raw/
+ai/data/interim/
+ai/data/processed/
+ai/runs/
+ai/weights/*
+!ai/weights/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.tflite
+
+# ===== Hạ tầng =====
+infra/volumes/

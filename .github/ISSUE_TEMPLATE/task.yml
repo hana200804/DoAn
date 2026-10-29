@@ -1,0 +1,24 @@
+name: Công việc
+description: Công việc kỹ thuật không trực tiếp là tính năng (khởi tạo, cấu hình, dữ liệu, tài liệu)
+title: "[Task] "
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Mô tả
+      description: Cần làm gì và vì sao
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Tiêu chí hoàn thành
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Tài liệu liên quan

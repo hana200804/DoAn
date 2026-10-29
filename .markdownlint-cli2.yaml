@@ -1,0 +1,14 @@
+config:
+  default: true
+  # Bảng và sơ đồ cần dòng dài
+  MD013: false
+  # README dùng <div align="center"> để căn giữa tiêu đề
+  MD033: false
+  # README bắt đầu bằng thẻ <div>
+  MD041: false
+  # Cho phép tiêu đề trùng tên ở các mục khác nhau
+  MD024:
+    siblings_only: true
+
+ignores:
+  - "**/node_modules/**"

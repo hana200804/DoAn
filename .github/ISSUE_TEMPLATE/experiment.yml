@@ -1,0 +1,33 @@
+name: Thí nghiệm AI
+description: Một thí nghiệm huấn luyện hoặc đánh giá mô hình
+title: "[EXP] "
+labels: ["type:experiment", "area:ai"]
+body:
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Giả thuyết
+      placeholder: Thay đổi X sẽ làm chỉ số Y tăng ít nhất Z
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Thiết lập
+      description: Mô hình, phiên bản dữ liệu, cấu hình, đối chứng
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Chỉ số đo
+      placeholder: mAP@0.5, recall nhóm cấm, FPS trên thiết bị, ...
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: Tiêu chí giữ hoặc bỏ
+      placeholder: Giữ nếu ...; bỏ nếu ...
+    validations:
+      required: true
