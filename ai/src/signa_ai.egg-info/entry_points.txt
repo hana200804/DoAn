@@ -1,0 +1,2 @@
+[console_scripts]
+signa-ai = signa_ai.cli:main
