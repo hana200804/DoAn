@@ -102,6 +102,8 @@ def export_bundle(
             "temperature": temperature,
         },
         "signHeightM": lm.sign_height_m,
+        # Danh mục để app hiển thị tên biển và cảnh báo khi không có mạng
+        "catalog": lm.codes,
     }
     (out / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
