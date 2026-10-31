@@ -21,7 +21,7 @@ Thiết kế toàn bộ phần trí tuệ nhân tạo: từ khung hình camera �
 ```mermaid
 flowchart LR
     F[Khung hình<br/>CameraX] --> D[Detector<br/>YOLOv8n INT8]
-    D -->|box + nhóm| C[Classifier<br/>MobileNetV3 INT8]
+    D -->|box + nhóm| C[Classifier<br/>YOLOv8n-cls INT8]
     C -->|mã + xác suất| T[Tracker<br/>bỏ phiếu đa khung]
     T -->|biển đã xác nhận| W[WarningEngine]
     P[(Biển tải trước)] --> W
@@ -61,7 +61,7 @@ CameraX dùng chiến lược `STRATEGY_KEEP_ONLY_LATEST`: khi xử lý chậm, 
 
 | Hạng mục | Thiết kế |
 | --- | --- |
-| Mô hình | MobileNetV3-Small, tiền huấn luyện ImageNet |
+| Mô hình | YOLOv8n-cls (Ultralytics), tiền huấn luyện ImageNet; cùng bộ công cụ với detector nên xuất thẳng TFLite INT8 |
 | Đầu vào | Ảnh cắt từ box detector, nới 10% mỗi cạnh, giữ tỉ lệ, đệm thành 96 × 96 |
 | Lớp đầu ra | Toàn bộ mã trong label map (ví dụ `P.123a`, `P.127_50`) và lớp `unknown` |
 | Huấn luyện | Cross-entropy, label smoothing 0,1; lấy mẫu cân bằng theo lớp; thêm ảnh tổng hợp cho lớp hiếm ([Dữ liệu §7](05-du-lieu.md#7-dữ-liệu-tổng-hợp)) |

@@ -19,7 +19,8 @@
 - MySQL 8, InnoDB, `utf8mb4`.
 - Khoá chính dạng UUID lưu `CHAR(36)`, trừ bảng nhật ký dùng `BIGINT AUTO_INCREMENT`.
 - Thời gian lưu `DATETIME(3)` theo UTC.
-- Toạ độ lưu `POINT SRID 4326` có chỉ mục không gian.
+- Toạ độ lưu hai cột `lat`, `lng` (DOUBLE) với chỉ mục `(lat, lng)`; truy vấn vùng bằng `BETWEEN`, khoảng cách chính xác tính trong mã.
+- Migration trong `*/src/main/resources/db/migration` là nguồn chuẩn của lược đồ. Bảng `label_tasks` và `model_versions` thuộc #44, #45, chưa cài đặt.
 - Liên kết giữa hai CSDL chỉ qua ID (`user_id`), không có khoá ngoại chéo.
 
 ## 2. auth_db
@@ -64,7 +65,8 @@ erDiagram
     sign_clusters {
         char id PK
         varchar sign_code FK
-        point location
+        double lat
+        double lng
         smallint heading_deg
         decimal confidence
         enum status
@@ -82,7 +84,8 @@ erDiagram
         char user_id
         enum kind
         varchar sign_code
-        point location
+        double lat
+        double lng
         varchar crop_key
         json flags
     }
@@ -144,7 +147,7 @@ erDiagram
 | --- | --- | --- | --- |
 | `id` | CHAR(36) | PK | |
 | `sign_code` | VARCHAR(20) | FK → `sign_types.code`, NOT NULL | Mã dẫn đầu |
-| `location` | POINT SRID 4326 | NOT NULL, SPATIAL INDEX | Vị trí cụm |
+| `lat`, `lng` | DOUBLE | NOT NULL, INDEX `(lat, lng)` | Vị trí cụm |
 | `heading_deg` | SMALLINT | NOT NULL | Hướng đi mà biển áp dụng, 0–359 |
 | `alpha`, `beta` | DECIMAL(10,3) | NOT NULL | Tham số Beta |
 | `confidence` | DECIMAL(4,3) | NOT NULL, INDEX | `alpha / (alpha + beta)` |
@@ -190,7 +193,7 @@ erDiagram
 | `detector_group` | VARCHAR(20) | NULL | Nhóm do detector trả |
 | `class_probs` | JSON | NULL | Top-3 mã và xác suất |
 | `vote_share` | DECIMAL(4,3) | NULL | Tỉ lệ phiếu của mã dẫn đầu |
-| `location` | POINT SRID 4326 | NOT NULL, SPATIAL INDEX | Vị trí biển ước lượng |
+| `lat`, `lng` | DOUBLE | NOT NULL | Vị trí biển ước lượng |
 | `heading_deg` | SMALLINT | NOT NULL | Hướng đi |
 | `distance_m` | DECIMAL(6,1) | NULL | Khoảng cách ước lượng tới biển |
 | `frames` | INT | NULL | Số khung của track |
@@ -283,26 +286,15 @@ erDiagram
 
 ## 5. Truy vấn không gian
 
-Biển trong một vùng hình chữ nhật:
+Biển trong một vùng hình chữ nhật dùng chỉ mục `(lat, lng)`:
 
 ```sql
-SELECT id, sign_code, ST_Latitude(location) AS lat, ST_Longitude(location) AS lng, confidence
-FROM sign_clusters
-WHERE status = 'VERIFIED'
-  AND MBRContains(ST_GeomFromText(:bbox_wkt, 4326), location);
+SELECT c.*, t.group_code, t.name FROM sign_clusters c JOIN sign_types t ON t.code = c.sign_code
+WHERE c.lat BETWEEN :minLat AND :maxLat AND c.lng BETWEEN :minLng AND :maxLng
+  AND c.status IN (:statuses);
 ```
 
-Cụm ứng viên trong bán kính khi gom cụm:
-
-```sql
-SELECT id, heading_deg
-FROM sign_clusters
-WHERE status <> 'REJECTED'
-  AND MBRContains(ST_GeomFromText(:search_box_wkt, 4326), location)
-  AND ST_Distance_Sphere(location, ST_GeomFromText(:point_wkt, 4326)) <= 20;
-```
-
-> Với SRID 4326, `ST_GeomFromText` của MySQL 8 mặc định đọc toạ độ theo thứ tự **vĩ độ – kinh độ**. Toàn bộ mã dùng chung một hàm tạo WKT, và có test cho các truy vấn không gian.
+Khi gom cụm, sign-service lấy các cụm trong ô vuông quanh điểm quan sát rồi tính khoảng cách haversine, độ lệch hướng trong Java (`ClusterRules.pick`). Cách này tránh hẳn lỗi thứ tự trục vĩ độ – kinh độ của kiểu `POINT SRID 4326`.
 
 ## 6. Quy ước migration
 

@@ -82,7 +82,8 @@ Content-Type: application/json
 
 | Method | Đường dẫn | Quyền | Mô tả | FR |
 | --- | --- | --- | --- | --- |
-| GET | `/places/search?q=&lat=&lng=` | Đã đăng nhập | Tìm địa chỉ theo từ khoá | FR-09 |
+| GET | `/places/search?q=&lat=&lng=` | Đã đăng nhập | Tìm địa chỉ theo từ khoá (trả `refId`, chưa có toạ độ) | FR-09 |
+| GET | `/places/{refId}` | Đã đăng nhập | Toạ độ và địa chỉ đầy đủ của một kết quả tìm kiếm | FR-09 |
 | GET | `/places/reverse?lat=&lng=` | Đã đăng nhập | Địa chỉ của một toạ độ | FR-08 |
 | GET | `/routes?from=lat,lng&to=lat,lng&vehicle=CAR` | Đã đăng nhập | Tuyến đường và polyline | FR-09 |
 

@@ -2,8 +2,6 @@
 
 Các microservice nghiệp vụ viết bằng Java Spring Boot: xác thực, bản đồ, biển báo thời gian thực (gom cụm quan sát và tính điểm tin cậy).
 
-> **Trạng thái:** chưa có mã nguồn. Tài liệu này là đặc tả phạm vi và quy ước trước khi code.
-
 ## Mục lục
 
 - [Danh sách service](#danh-sách-service)
@@ -35,11 +33,11 @@ Các microservice nghiệp vụ viết bằng Java Spring Boot: xác thực, b�
 | Build | Gradle (Kotlin DSL), multi-project |
 | Web | Spring Web (REST), springdoc-openapi (Swagger UI) |
 | Bảo mật | Spring Security, BCrypt |
-| Dữ liệu | Spring Data JPA, MySQL 8, Flyway (migration) |
+| Dữ liệu | MySQL 8, Flyway; Spring Data JPA (auth-service), JdbcTemplate (sign-service) |
 | Cache / phiên | Redis |
-| Lưu ảnh | MinIO (S3 API) |
-| Giao tiếp nội bộ | gRPC (`grpc-spring-boot-starter`), Protobuf trong `backend/proto/` |
-| Bất đồng bộ | Hàng đợi Redis Streams cho xử lý ảnh, geocoding |
+| Lưu ảnh | Kho S3 (RustFS khi chạy bằng `infra/`), client MinIO Java |
+| Giao tiếp nội bộ | gRPC tới ai-service, Protobuf trong `backend/proto/` (chưa cài, #42) |
+| Xử lý quan sát | Đồng bộ trong request `complete`; chuyển sang Redis Stream khi tải vượt NFR-12 |
 | Quan sát | Spring Boot Actuator, log JSON |
 
 ## Sơ đồ giao tiếp
@@ -68,17 +66,16 @@ Mỗi service tự xác thực request bằng session ID tra trong Redis (không
 
 ```text
 backend/
-├── proto/                       # file .proto dùng chung (sign-service ↔ ai-service)
-├── common/                      # thư viện chung: DTO lỗi, xác thực phiên, tiện ích
-├── auth-service/
-├── map-service/
+├── common/            # lỗi chung, X-Request-Id, phiên Redis, @Authenticated, rate limit
+├── auth-service/      # tài khoản, phiên, OTP (JPA)
+├── map-service/       # proxy VietMap có cache Redis
 ├── sign-service/
 │   └── src/main/java/com/signa/sign/
-│       ├── api/                 # controller, DTO request/response
-│       ├── application/         # service nghiệp vụ, use case
-│       ├── domain/              # entity, logic gom cụm + điểm tin cậy
-│       ├── infrastructure/      # JPA repository, MinIO, gRPC client, Redis Streams
-│       └── config/
+│       ├── api/       # controller, DTO
+│       ├── app/       # ObservationService (gom cụm), ReviewService (mâu thuẫn, báo cáo)
+│       ├── domain/    # ClusterRules (điểm tin cậy Beta), Geo — Java thuần, có test
+│       └── store/     # SignRepository (JdbcTemplate), CropStorage (S3)
+├── Dockerfile         # dùng chung: --build-arg SERVICE=<tên service>
 ├── build.gradle.kts
 └── settings.gradle.kts
 ```
@@ -92,8 +89,6 @@ backend/
 - Khoá ngoài giữa các service chỉ là ID, không join chéo CSDL.
 
 ## Cài đặt và chạy
-
-> Hướng dẫn chi tiết được bổ sung khi khởi tạo mã nguồn.
 
 Yêu cầu: JDK 21, Docker.
 

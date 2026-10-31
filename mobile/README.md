@@ -2,8 +2,6 @@
 
 Ứng dụng Android cho người lái: nhận diện biển báo ngay trên điện thoại, cảnh báo bằng giọng nói, xem bản đồ biển báo và dẫn đường.
 
-> **Trạng thái:** chưa có mã nguồn. Tài liệu này là đặc tả phạm vi và quy ước trước khi code.
-
 ## Mục lục
 
 - [Phạm vi](#phạm-vi)
@@ -36,12 +34,12 @@
 | Giao diện | Jetpack Compose, Material 3 |
 | Camera | CameraX (`ImageAnalysis`) |
 | Suy luận AI | TensorFlow Lite (GPU delegate, dự phòng CPU qua XNNPACK) |
-| Bản đồ | VietMap SDK |
-| Mạng | Retrofit + OkHttp, Kotlinx Serialization |
-| Lưu trữ cục bộ | Room (biển báo tải trước, hàng đợi gửi), DataStore (cài đặt) |
-| Kiến trúc | MVVM + Clean Architecture, Hilt (DI), Coroutines/Flow |
+| Bản đồ | MapLibre Android với style VietMap |
+| Mạng | `HttpURLConnection` + `org.json` của nền tảng |
+| Lưu trữ cục bộ | File JSON (biển tải trước, hàng đợi quan sát), SharedPreferences (cài đặt, phiên) |
+| Kiến trúc | Module `:core` (Kotlin thuần, logic) + `:app` (Android); DI thủ công trong `SignaApp`; Coroutines |
 | Đọc cảnh báo | Android TextToSpeech (tiếng Việt) |
-| Định vị | Fused Location Provider |
+| Định vị | `LocationManager` (GPS) của nền tảng |
 | SDK | `minSdk 26`, `targetSdk` mới nhất tại thời điểm khởi tạo |
 
 Lý do chọn nhận diện trên thiết bị: [ADR-0002](../docs/adr/0002-nhan-dien-tren-thiet-bi.md).
@@ -61,8 +59,8 @@ flowchart TB
     end
     subgraph Data["data/"]
         Repo[Repositories]
-        Room[(Room)]
-        Api[Retrofit API]
+        Files[(File JSON)]
+        Api[HttpURLConnection]
     end
     subgraph Vision["vision/"]
         Analyzer[FrameAnalyzer<br/>CameraX] --> Detector --> Classifier --> Tracker
@@ -71,7 +69,7 @@ flowchart TB
     Tracker --> WarningEngine
     WarningEngine --> DriveScreen
     Tracker --> Repo
-    Repo --> Room
+    Repo --> Files
     Repo --> Api
     MapScreen --> UseCases --> Repo
 ```
@@ -82,22 +80,19 @@ Luồng xử lý một khung hình nằm trọn trong `vision/`, chạy trên lu
 
 ```text
 mobile/
-├── app/
-│   └── src/
-│       ├── main/
-│       │   ├── java/com/signa/app/
-│       │   │   ├── ui/            # Compose: drive, map, sign, settings, auth
-│       │   │   ├── domain/        # model, usecase, warning (máy trạng thái)
-│       │   │   ├── data/          # repository, local (Room), remote (Retrofit)
-│       │   │   ├── vision/        # analyzer, detector, classifier, tracker, geo
-│       │   │   └── di/            # Hilt modules
-│       │   ├── assets/models/     # mô hình .tflite nhúng sẵn (không commit)
-│       │   └── res/
-│       ├── test/                  # unit test (JVM)
-│       └── androidTest/           # instrumented + Compose UI test
-├── gradle/libs.versions.toml      # version catalog
-├── build.gradle.kts
-└── settings.gradle.kts
+├── core/src/main/kotlin/com/signa/core/   # Kotlin thuần: Tracker, WarningEngine, Geo (có test)
+├── app/src/main/
+│   ├── java/com/signa/app/
+│   │   ├── SignaApp.kt          # DI thủ công, vòng gửi quan sát
+│   │   ├── Models.kt            # nạp bộ mô hình, Detector, Classifier (TFLite)
+│   │   ├── Pipeline.kt          # khung hình → phát hiện → phân loại → theo dõi → cảnh báo
+│   │   ├── ObservationQueue.kt  # hàng đợi quan sát, gửi theo lô có Idempotency-Key
+│   │   ├── SignStore.kt         # biển tải trước quanh vị trí
+│   │   ├── Sensors.kt           # GPS, giọng nói
+│   │   └── *Screen.kt           # Compose: lái xe, bản đồ, cài đặt + tài khoản
+│   └── assets/models/           # bộ mô hình do signa-ai xuất (không commit)
+├── gradle/libs.versions.toml
+└── local.properties.example
 ```
 
 ## Màn hình
@@ -125,8 +120,6 @@ Mã yêu cầu tham chiếu [Đặc tả yêu cầu](../docs/02-dac-ta-yeu-cau.m
 
 ## Cài đặt và chạy
 
-> Hướng dẫn chi tiết được bổ sung khi khởi tạo mã nguồn.
-
 Yêu cầu: Android Studio bản ổn định mới nhất, JDK 17, thiết bị thật Android 8.0+ (emulator không đủ để đo hiệu năng camera).
 
 ```bash
@@ -142,14 +135,13 @@ cp local.properties.example local.properties   # điền VIETMAP_API_KEY, API_BA
 | --- | --- |
 | `VIETMAP_API_KEY` | Khoá VietMap SDK |
 | `API_BASE_URL` | Địa chỉ nginx của backend: `http://10.0.2.2:8080` trên emulator, `http://<IP máy tính>:8080` trên điện thoại thật cùng mạng |
-| `MODEL_VERSION` | Phiên bản bộ mô hình nhúng sẵn; task Gradle `fetchModels` tải bộ này vào `assets/models/` trước khi build |
 
 ## Kiểm thử
 
 | Loại | Phạm vi | Lệnh |
 | --- | --- | --- |
-| Unit | `WarningEngine`, `Tracker`, ánh xạ nhãn | `./gradlew test` |
-| Instrumented | Chạy mô hình trên ảnh mẫu, Room | `./gradlew connectedAndroidTest` |
+| Unit | `Tracker`, `WarningEngine`, `Geo` trong `:core` | `./gradlew :core:test` (máy không có SDK: thêm `-PcoreOnly`) |
+| Instrumented | Chạy mô hình trên ảnh mẫu (chưa có) | `./gradlew connectedAndroidTest` |
 | Thực địa | Video gắn trên xe, đo FPS / cảnh báo sai | Xem [kế hoạch kiểm thử](../docs/08-kiem-thu.md) |
 
 ## Tài liệu liên quan

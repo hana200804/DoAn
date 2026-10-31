@@ -11,7 +11,7 @@ Danh mục QCVN 41 có nhiều mã biển, trong đó nhiều biển rất giố
 Tách nhận diện thành hai tầng:
 
 1. **Detector** (YOLOv8n) chỉ phát hiện vùng biển và phân 5 **nhóm** theo hình dạng, màu.
-2. **Classifier** (MobileNetV3-Small) phân loại **mã biển** trên ảnh cắt 96 × 96 của từng box.
+2. **Classifier** (YOLOv8n-cls) phân loại **mã biển** trên ảnh cắt 96 × 96 của từng box.
 
 ## Các phương án đã xem xét
 
