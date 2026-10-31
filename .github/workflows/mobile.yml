@@ -1,0 +1,33 @@
+name: Mobile
+
+on:
+  push:
+    branches: [main, dev]
+    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+  pull_request:
+    paths: ["mobile/**", ".github/workflows/mobile.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Core test, assemble
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      # Runner của GitHub có sẵn Android SDK (ANDROID_HOME)
+      - run: ./gradlew :core:test assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: mobile/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
