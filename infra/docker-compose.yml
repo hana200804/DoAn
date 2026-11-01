@@ -36,6 +36,11 @@ services:
       - "9000:9000"
     volumes:
       - minio-data:/data
+    # Có phản hồi HTTP bất kỳ (kể cả 403) là đã nhận request
+    healthcheck:
+      test: ["CMD", "curl", "-so", "/dev/null", "http://localhost:9000/"]
+      interval: 5s
+      retries: 30
 
   auth-service:
     build: { context: ../backend, args: { SERVICE: auth-service } }
@@ -46,6 +51,7 @@ services:
       REDIS_HOST: redis
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Để trống MAIL_HOST thì OTP chỉ ghi ra log của auth-service
       SPRING_MAIL_HOST: ${MAIL_HOST:-}
       SPRING_MAIL_PORT: ${MAIL_PORT:-587}
       SPRING_MAIL_USERNAME: ${MAIL_USERNAME:-}
@@ -78,7 +84,7 @@ services:
     depends_on:
       mysql: { condition: service_healthy }
       redis: { condition: service_healthy }
-      minio: { condition: service_started }
+      minio: { condition: service_healthy }
 
   web-admin:
     build: ../web-admin
