@@ -61,4 +61,6 @@ dependencies {
     implementation(libs.tflite.gpu.api)
     implementation(libs.maplibre)
     implementation(libs.coroutines.android)
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
 }

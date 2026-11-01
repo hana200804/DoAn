@@ -37,7 +37,10 @@ class SignStore(private val file: File, private val api: Api) {
         if (!moved && nowMs - fetchedAtMs < 10 * 60_000) return
         val text = fetch(lng - 0.02, lat - 0.02, lng + 0.02, lat + 0.02, includeCandidates = false)
         signs = parse(text)
-        file.writeText(text)
+        // Ghi file tạm rồi đổi tên: app bị dừng giữa chừng không làm hỏng bản cache cũ
+        val tmp = File(file.path + ".tmp")
+        tmp.writeText(text)
+        tmp.renameTo(file)
         center = lat to lng
         fetchedAtMs = nowMs
     }

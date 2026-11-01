@@ -25,7 +25,7 @@ jobs:
           java-version: 17
           cache: gradle
       # Runner của GitHub có sẵn Android SDK (ANDROID_HOME)
-      - run: ./gradlew :core:test assembleDebug --no-daemon
+      - run: ./gradlew :core:test :app:testDebugUnitTest assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug

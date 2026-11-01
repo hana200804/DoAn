@@ -12,7 +12,7 @@ import java.util.UUID
 
 /**
  * Hàng đợi quan sát trên máy (FR-14), tách theo tài khoản: `<dir>/<userId>/<clientId>/` chứa
- * obs.json, crop.jpg và sub.jpg khi có biển phụ. Mỗi quan sát được ghi vào thư mục `.tmp` rồi đổi
+ * obs.json, crop.jpg (quan sát dương) và sub.jpg khi có biển phụ. Mỗi quan sát được ghi vào thư mục `.tmp` rồi đổi
  * tên một lần nên không bao giờ thiếu file. Khi gửi, tối đa 20 quan sát được chuyển vào
  * `batch-<Idempotency-Key>` và chỉ xoá khi server xác nhận, nên gửi lại sau lỗi mạng không tạo bản
  * ghi trùng.
@@ -31,12 +31,13 @@ class ObservationQueue(
 
     private fun userDir(): File? = prefs.userId?.let { File(dir, it) }
 
-    fun add(observation: JSONObject, crop: Bitmap, subCrop: Bitmap?) {
+    /** [crop] null với quan sát âm. */
+    fun add(observation: JSONObject, crop: Bitmap?, subCrop: Bitmap?) {
         val user = userDir() ?: return
         if (prefs.session == null || !prefs.contribute) return
         val id = observation.getString("clientId")
         val tmp = File(user, "$id.tmp").apply { mkdirs() }
-        File(tmp, CROP).outputStream().use { crop.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        crop?.let { c -> File(tmp, CROP).outputStream().use { c.compress(Bitmap.CompressFormat.JPEG, 85, it) } }
         subCrop?.let { s -> File(tmp, SUB).outputStream().use { s.compress(Bitmap.CompressFormat.JPEG, 85, it) } }
         File(tmp, OBS).writeText(observation.toString())
         tmp.renameTo(File(user, id))
@@ -60,7 +61,10 @@ class ObservationQueue(
         val batch = pendingBatch(user) ?: return
         val key = batch.name.removePrefix("batch-")
         // Quan sát thiếu file không thể gửi; bỏ lại để xoá cùng lô thay vì kẹt hàng đợi
-        val items = observations(batch).filter { File(it, OBS).exists() && File(it, CROP).exists() }.sortedBy { it.name }
+        val items = observations(batch).sortedBy { it.name }.mapNotNull { dir ->
+            val obs = File(dir, OBS).takeIf { it.exists() }?.let { JSONObject(it.readText()) }
+            obs?.takeIf { it.getString("kind") == "NEGATIVE" || File(dir, CROP).exists() }
+        }
         if (items.isEmpty()) {
             batch.deleteRecursively()
             return
@@ -71,7 +75,7 @@ class ObservationQueue(
             .put("modelVersion", modelVersion)
             .put("labelMapVersion", labelMapVersion)
             .put("deviceModel", Build.MODEL)
-            .put("observations", JSONArray(items.map { JSONObject(File(it, OBS).readText()) }))
+            .put("observations", JSONArray(items))
         val res = try {
             JSONObject(api.post("/observations", body, auth + ("Idempotency-Key" to key)))
         } catch (e: ApiException) {

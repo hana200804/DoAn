@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.signa.core.Geo
+import com.signa.core.PassMonitor
 import com.signa.core.WarningEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,7 +67,8 @@ fun DriveScreen(hasLocation: Boolean) {
     var tracks by remember { mutableStateOf(emptyList<TrackView>()) }
     var frameSize by remember { mutableStateOf(Size(1f, 1f)) }
     var banner by remember { mutableStateOf<String?>(null) }
-    val pipeline = remember { Pipeline(models, engine) { obs, crop, sub -> app.queue.add(obs, crop, sub) } }
+    val passes = remember { PassMonitor() }
+    val pipeline = remember { Pipeline(models, engine, passes) { obs, crop, sub -> app.queue.add(obs, crop, sub) } }
 
     DisposableEffect(Unit) {
         val window = (context as ComponentActivity).window
@@ -92,10 +95,17 @@ fun DriveScreen(hasLocation: Boolean) {
             val now = System.currentTimeMillis()
             fix?.let { f ->
                 val ahead = app.signs.ahead(f.lat, f.lng, f.bearing)
+                val near = app.signs.signs.associate { it.id to (it.code to Geo.distanceM(f.lat, f.lng, it.lat, it.lng)) }
+                    .filterValues { it.second < NEAR_M }
                 synchronized(engine) {
                     engine.onSpeed(f.speedKmh, now)
                     ahead.forEach { (s, d) -> engine.onMapSign(s.id, s.code, s.conditions, false, d, f.speedKmh, now) }
-                    engine.keepOnly("map:", ahead.mapTo(HashSet()) { "map:${it.first.id}" })
+                    // Quên theo khoảng cách, không theo hướng: xe đứng yên thì GPS không có hướng
+                    engine.keepOnly("map:", near.keys.mapTo(HashSet()) { "map:$it" })
+                }
+                val missed = synchronized(passes) { passes.update(near, now) }
+                if (missed.isNotEmpty()) {
+                    withContext(Dispatchers.IO) { missed.forEach { app.queue.add(Pipeline.negativeObservation(it, f), null, null) } }
                 }
             }
             synchronized(engine) { engine.nextSpeech(now) }?.let {
@@ -200,3 +210,6 @@ private fun SpeedBadge(speedKmh: Float?, limitKmh: Int?) {
         )
     }
 }
+
+/** Biển trong bán kính này coi như còn quanh xe. */
+private const val NEAR_M = 300.0

@@ -3,6 +3,7 @@ package com.signa.app
 import android.graphics.Bitmap
 import com.signa.core.Box
 import com.signa.core.Geo
+import com.signa.core.PassMonitor
 import com.signa.core.Track
 import com.signa.core.Tracker
 import com.signa.core.WarningEngine
@@ -25,6 +26,7 @@ data class TrackView(val box: Box, val code: String?, val confirmed: Boolean)
 class Pipeline(
     private val models: ModelBundle,
     private val engine: WarningEngine,
+    private val passes: PassMonitor,
     private val onObservation: (obs: JSONObject, crop: Bitmap, subCrop: Bitmap?) -> Unit,
 ) {
     private val tracker = Tracker()
@@ -35,7 +37,8 @@ class Pipeline(
 
     fun process(frame: Bitmap, fix: Fix?, nowMs: Long): List<TrackView> {
         val result = tracker.update(models.detector.detect(frame))
-        val subs = result.active.filter { it.group == auxGroup }
+        // Chỉ biển phụ đã xác nhận, để một khung nhiễu không gắn nhầm
+        val subs = result.active.filter { it.group == auxGroup && it.confirmed }
         var classified = 0
         for (t in result.active) {
             if (classified < MAX_CROPS_PER_FRAME && t.needsClassification()) {
@@ -56,6 +59,7 @@ class Pipeline(
             if (t.confirmed && code != null) {
                 // WarningEngine tự chống đọc lặp theo key
                 synchronized(engine) { engine.onSign("track:${t.id}", code, null, t.id in subCrop, nowMs) }
+                synchronized(passes) { passes.cameraSaw(code, nowMs) }
             }
         }
         result.ended.forEach { emit(it) }
@@ -102,6 +106,15 @@ class Pipeline(
 
     companion object {
         const val MAX_CROPS_PER_FRAME = 3
+
+        /** Quan sát âm: xe đi qua cụm [clusterId] trên bản đồ mà camera không thấy biển. */
+        fun negativeObservation(clusterId: String, fix: Fix): JSONObject = JSONObject()
+            .put("clientId", UUID.randomUUID().toString())
+            .put("kind", "NEGATIVE")
+            .put("clusterId", clusterId)
+            .put("location", JSONObject().put("lat", fix.lat).put("lng", fix.lng))
+            .put("headingDeg", fix.bearing.toInt().mod(360))
+            .put("observedAt", Instant.now().toString())
 
         // shortcut: góc nhìn ngang mặc định 66°; đọc LENS_INTRINSIC_CALIBRATION khi cần sai số vị trí nhỏ hơn
         fun focalPx(imageWidth: Int): Double = imageWidth / 2.0 / tan(Math.toRadians(33.0))

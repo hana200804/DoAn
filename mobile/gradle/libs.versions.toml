@@ -8,6 +8,8 @@ camerax = "1.4.0"
 tflite = "2.16.1"
 maplibre = "11.5.2"
 coroutines = "1.9.0"
+junit = "4.13.2"
+robolectric = "4.14.1"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -24,6 +26,8 @@ tflite-gpu = { module = "org.tensorflow:tensorflow-lite-gpu", version.ref = "tfl
 tflite-gpu-api = { module = "org.tensorflow:tensorflow-lite-gpu-api", version.ref = "tflite" }
 maplibre = { module = "org.maplibre.gl:android-sdk", version.ref = "maplibre" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
