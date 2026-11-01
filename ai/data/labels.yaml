@@ -25,6 +25,8 @@ codes:
   - {code: P.127_60, group: prohibitory, name: Tốc độ tối đa cho phép 60 km/h, speed_kmh: 60}
   - {code: P.127_70, group: prohibitory, name: Tốc độ tối đa cho phép 70 km/h, speed_kmh: 70}
   - {code: P.127_80, group: prohibitory, name: Tốc độ tối đa cho phép 80 km/h, speed_kmh: 80}
+  - {code: DP.134, group: prohibitory, name: Hết tốc độ tối đa cho phép, ends_speed_limit: true}
+  - {code: DP.135, group: prohibitory, name: Hết tất cả các lệnh cấm, ends_speed_limit: true}
   - {code: R.303, group: mandatory, name: Nơi giao nhau chạy theo vòng xuyến}
   - {code: R.302a, group: mandatory, name: Hướng phải đi vòng chướng ngại vật sang phải}
   - {code: W.207a, group: warning, name: Giao nhau với đường không ưu tiên}

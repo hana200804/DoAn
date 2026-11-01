@@ -30,9 +30,9 @@ def parse(text: str) -> dict:
     cond: dict = {}
 
     windows = [
-        {"from": f"{int(h1):02d}:{int(m1 or 0):02d}", "to": f"{int(h2):02d}:{int(m2 or 0):02d}"}
+        {"from": f, "to": t}
         for h1, m1, h2, m2 in _TIME.findall(text)
-        if int(h1) <= 24 and int(h2) <= 24
+        if (f := _clock(h1, m1)) and (t := _clock(h2, m2))
     ]
     if windows:
         cond["timeWindows"] = windows
@@ -49,6 +49,14 @@ def parse(text: str) -> dict:
         cond["weightLimitTon"] = float(m.group(1).replace(",", "."))
 
     return {"rawText": raw, "parsed": bool(cond), "conditions": cond or None}
+
+
+def _clock(h: str, m: str) -> str | None:
+    """Chuỗi HH:MM hợp lệ cho LocalTime; 24h đổi thành 23:59. None nếu OCR đọc ra giờ/phút sai."""
+    h, m = int(h), int(m or 0)
+    if (h, m) == (24, 0):
+        return "23:59"
+    return f"{h:02d}:{m:02d}" if h < 24 and m < 60 else None
 
 
 def _vehicles(text: str) -> tuple[list[str], list[str]]:

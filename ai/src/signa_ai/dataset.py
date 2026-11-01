@@ -93,15 +93,27 @@ def read_manifest(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+def _fresh(out: Path) -> None:
+    # Ghi chồng lên lần prepare trước có thể để cùng một video ở cả train lẫn val
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"{out} đã có dữ liệu, hãy chọn thư mục đầu ra mới")
+
+
+def _flat(row: dict) -> Path:
+    """Tên file đầu ra duy nhất: đường dẫn tương đối trong manifest, '/' thành '__'."""
+    return Path(row["path"].replace("/", "__"))
+
+
 def build_detector_dataset(root: Path, manifest: Path, out: Path, lm: LabelMap) -> Path:
     """Tập YOLO theo nhóm biển: đổi chỉ số mã → chỉ số nhóm. Trả đường dẫn data.yaml."""
+    _fresh(out)
     for row in read_manifest(manifest):
         img = root / row["path"]
         split = "val" if row["split"] == "test" else row["split"]
         if row["split"] == "test":
             continue  # tập test chỉ dùng cho đánh giá cuối, không đưa vào huấn luyện
-        dst_img = out / split / "images" / img.name
-        dst_lbl = out / split / "labels" / img.with_suffix(".txt").name
+        dst_img = out / split / "images" / _flat(row)
+        dst_lbl = out / split / "labels" / _flat(row).with_suffix(".txt")
         dst_img.parent.mkdir(parents=True, exist_ok=True)
         dst_lbl.parent.mkdir(parents=True, exist_ok=True)
         dst_img.write_bytes(img.read_bytes())
@@ -123,6 +135,7 @@ def build_classifier_dataset(root: Path, manifest: Path, out: Path, lm: LabelMap
     """Ảnh cắt theo mã biển, xếp thư mục ``<split>/<code>/`` cho YOLO classification."""
     import cv2  # chỉ cần khi huấn luyện
 
+    _fresh(out)
     for row in read_manifest(manifest):
         if row["split"] == "test":
             continue
@@ -143,7 +156,7 @@ def build_classifier_dataset(root: Path, manifest: Path, out: Path, lm: LabelMap
             x1, y1 = min(w, int(cx + bw / 2)), min(h, int(cy + bh / 2))
             if x1 - x0 < 8 or y1 - y0 < 8:
                 continue
-            dst = out / row["split"] / lm.code_names[int(cls)] / f"{img_path.stem}_{i}.jpg"
+            dst = out / row["split"] / lm.code_names[int(cls)] / f"{_flat(row).stem}_{i}.jpg"
             dst.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(dst), img[y0:y1, x0:x1])
     return out

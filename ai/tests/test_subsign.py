@@ -31,3 +31,8 @@ def test_combined_conditions():
     assert c["weightLimitTon"] == 10.0
     assert c["distanceAheadM"] == 200
     assert len(c["timeWindows"]) == 2
+
+
+def test_invalid_clock_is_not_a_condition_and_24h_is_end_of_day():
+    assert parse("6h99-24h30")["parsed"] is False
+    assert parse("22h-24h")["conditions"]["timeWindows"] == [{"from": "22:00", "to": "23:59"}]

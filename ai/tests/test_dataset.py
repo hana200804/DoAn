@@ -1,6 +1,9 @@
 """UT-A05, UT-A06 và kiểm tra nhãn."""
 
+import csv
 from pathlib import Path
+
+import pytest
 
 from signa_ai import dataset
 from signa_ai.labels import LabelMap
@@ -48,3 +51,21 @@ def test_validate_reports_bad_class_and_coordinates(tmp_path):
     errors = dataset.validate(tmp_path, LabelMap.load())
     assert len(errors) == 2
     assert all("bad.txt" in e for e in errors)
+
+
+def test_prepare_keeps_same_named_frames_and_refuses_old_output(tmp_path):
+    root, out, manifest = tmp_path / "raw", tmp_path / "out", tmp_path / "m.csv"
+    for seq in ["route-a", "route-b"]:
+        _make(root, seq, "frame001", "0 0.5 0.5 0.1 0.1\n", seq.encode())
+    lm = LabelMap.load()
+    dataset.write_manifest(root, manifest, lm)
+    rows = [{**r, "split": "train"} for r in dataset.read_manifest(manifest)]
+    with manifest.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+
+    dataset.build_detector_dataset(root, manifest, out, lm)
+    assert {p.read_bytes() for p in (out / "train" / "images").iterdir()} == {b"route-a", b"route-b"}
+    with pytest.raises(FileExistsError):
+        dataset.build_detector_dataset(root, manifest, out, lm)
