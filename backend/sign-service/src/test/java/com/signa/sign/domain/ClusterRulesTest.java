@@ -45,7 +45,7 @@ class ClusterRulesTest {
   }
 
   @Test
-  void rejectedClusterIsNotPickedButIsReported() {
+  void longRejectedClusterIsNotPickedButIsReported() {
     Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90, true);
 
     assertThat(ClusterRules.pick(List.of(c), "PROHIBITORY", LAT, LNG, 90)).isEmpty();

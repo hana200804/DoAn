@@ -114,15 +114,15 @@ public class ObservationService {
       clusterId = UUID.randomUUID().toString();
       repo.insertCluster(clusterId, o.signCode(), o.lat(), o.lng(), o.headingDeg(), o.observedAt());
       repo.event(clusterId, null, "CREATED", null, o.signCode(), null);
-      // Cạnh chỗ quản trị viên đã loại: để quản trị viên quyết định, không tự công nhận lại
+      // Trùng chỗ đã loại từ lâu: để quản trị viên xét lại, không tự công nhận lại
       if (ClusterRules.nearRejected(candidates, group, o.lat(), o.lng(), o.headingDeg())) {
         repo.setStatus(clusterId, ClusterStatus.CONFLICT, o.signCode(), false);
         repo.event(clusterId, null, "STATUS_CHANGED", "CANDIDATE", "CONFLICT", "gần cụm đã loại");
       }
     }
-    // Mỗi người chỉ góp trọng số một lần cho một cụm, để một tài khoản không tự đẩy cụm lên
+    // Mỗi người góp tối đa một lần mỗi 12 giờ cho một cụm, để một tài khoản không tự đẩy cụm lên
     double weight =
-        repo.contributedBefore(clusterId, o.userId(), o.id())
+        repo.contributedRecently(clusterId, o.userId(), o.id())
             ? 0
             : (o.probability() == null ? DEFAULT_PROBABILITY : o.probability())
                 * repo.reputation(o.userId());

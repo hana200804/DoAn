@@ -12,6 +12,8 @@ import java.util.Optional;
 public final class ClusterRules {
 
   public static final double MATCH_RADIUS_M = 20;
+  public static final int CONTRIBUTION_HOURS = 12;
+  public static final int REJECT_SILENCE_DAYS = 30;
   public static final int MATCH_HEADING_DEG = 45;
   public static final double VERIFY_CONFIDENCE = 0.8;
   public static final int MIN_DISTINCT_USERS = 2;
@@ -20,26 +22,27 @@ public final class ClusterRules {
 
   private ClusterRules() {}
 
-  /** Cụm ứng viên đã đọc từ CSDL. */
-  public record Candidate(
-      String id, String group, double lat, double lng, int headingDeg, boolean rejected) {}
-
   /**
-   * Chọn cụm gần nhất cùng nhóm, trong bán kính và cùng hướng đi; rỗng nếu cần tạo cụm mới. Cụm đã
-   * bị loại không nhận thêm quan sát.
+   * Cụm ứng viên đã đọc từ CSDL. {@code rejectedLongAgo}: bị loại quá {@link #REJECT_SILENCE_DAYS}
+   * ngày. Cụm mới bị loại vẫn nhận quan sát (và giữ REJECTED) để quyết định của quản trị viên có
+   * hiệu lực.
    */
+  public record Candidate(
+      String id, String group, double lat, double lng, int headingDeg, boolean rejectedLongAgo) {}
+
+  /** Chọn cụm gần nhất cùng nhóm, trong bán kính và cùng hướng đi; rỗng nếu cần tạo cụm mới. */
   public static Optional<Candidate> pick(
       List<Candidate> candidates, String group, double lat, double lng, int headingDeg) {
     return candidates.stream()
-        .filter(c -> !c.rejected() && matches(c, group, lat, lng, headingDeg))
+        .filter(c -> !c.rejectedLongAgo() && matches(c, group, lat, lng, headingDeg))
         .min(Comparator.comparingDouble(c -> Geo.distanceM(c.lat(), c.lng(), lat, lng)));
   }
 
-  /** Vị trí này trùng một cụm quản trị viên đã loại. */
+  /** Vị trí này trùng một cụm đã loại từ lâu: cụm mới cần quản trị viên xét lại. */
   public static boolean nearRejected(
       List<Candidate> candidates, String group, double lat, double lng, int headingDeg) {
     return candidates.stream()
-        .anyMatch(c -> c.rejected() && matches(c, group, lat, lng, headingDeg));
+        .anyMatch(c -> c.rejectedLongAgo() && matches(c, group, lat, lng, headingDeg));
   }
 
   private static boolean matches(

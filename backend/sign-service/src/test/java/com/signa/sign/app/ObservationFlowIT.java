@@ -17,6 +17,7 @@ import com.signa.sign.store.CropStorage;
 import com.signa.sign.store.SignRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -42,6 +44,7 @@ class ObservationFlowIT {
   @Autowired ObservationService observations;
   @Autowired SignRepository repo;
   @Autowired ReviewService reviews;
+  @Autowired NamedParameterJdbcTemplate jdbc;
 
   private final double lat = 21.0 + Math.random() * 0.1;
   private final double lng = 105.8;
@@ -80,11 +83,17 @@ class ObservationFlowIT {
   }
 
   @Test
-  void rejectedClusterDoesNotAttractNewObservations() {
+  void rejectionHoldsForThirtyDaysThenNeedsReview() {
     String first = submit("user-r1");
     repo.setStatus(first, ClusterStatus.REJECTED, "P.123a", false);
 
-    String second = submit("user-r2");
+    assertThat(submit("user-r2")).isEqualTo(first);
+    assertThat(repo.cluster(first).orElseThrow().status()).isEqualTo(ClusterStatus.REJECTED);
+
+    jdbc.update(
+        "UPDATE sign_clusters SET updated_at = NOW(3) - INTERVAL 31 DAY WHERE id = :id",
+        Map.of("id", first));
+    String second = submit("user-r3");
     assertThat(second).isNotEqualTo(first);
     assertThat(repo.cluster(second).orElseThrow().status()).isEqualTo(ClusterStatus.CONFLICT);
   }
@@ -95,6 +104,13 @@ class ObservationFlowIT {
     double once = repo.codeWeights(cluster).get("P.123a");
     submit("user-w");
     assertThat(repo.codeWeights(cluster).get("P.123a")).isEqualTo(once);
+
+    // Lượt đi sau 12 giờ được tính thêm
+    jdbc.update(
+        "UPDATE observations SET created_at = NOW(3) - INTERVAL 13 HOUR WHERE cluster_id = :c",
+        Map.of("c", cluster));
+    submit("user-w");
+    assertThat(repo.codeWeights(cluster).get("P.123a")).isGreaterThan(once);
 
     var req = batch(0.9);
     var bad = req.observations().get(0);

@@ -1,5 +1,6 @@
 package com.signa.sign.store;
 
+import com.signa.sign.domain.ClusterRules;
 import com.signa.sign.domain.ClusterRules.Candidate;
 import com.signa.sign.domain.ClusterStatus;
 import com.signa.sign.domain.Geo;
@@ -148,17 +149,26 @@ public class SignRepository {
         SignRepository::cluster);
   }
 
-  /** Cụm trong ô vuông quanh một điểm (kể cả cụm đã loại), dùng làm ứng viên khi gom cụm. */
+  /**
+   * Cụm trong ô vuông quanh một điểm (kể cả cụm đã loại), dùng làm ứng viên khi gom cụm. Thời điểm
+   * loại lấy từ nhật ký; cụm bị đặt REJECTED mà không có nhật ký thì dùng updated_at.
+   */
   public List<Candidate> candidatesNear(double lat, double lng, double radiusM) {
     double dLat = Geo.metersToLatDeg(radiusM);
     double dLng = Geo.metersToLngDeg(radiusM, lat);
     return jdbc.query(
         """
-        SELECT c.id, t.group_code, c.lat, c.lng, c.heading_deg, c.status FROM sign_clusters c
+        SELECT c.id, t.group_code, c.lat, c.lng, c.heading_deg,
+          c.status = 'REJECTED' AND COALESCE(
+            (SELECT MAX(e.created_at) FROM cluster_events e
+               WHERE e.cluster_id = c.id AND e.action = 'REJECTED'),
+            c.updated_at) < NOW(3) - INTERVAL :days DAY AS rejected_long_ago
+        FROM sign_clusters c
         JOIN sign_types t ON t.code = c.sign_code
         WHERE c.lat BETWEEN :minLat AND :maxLat AND c.lng BETWEEN :minLng AND :maxLng
         """,
         new MapSqlParameterSource()
+            .addValue("days", ClusterRules.REJECT_SILENCE_DAYS)
             .addValue("minLat", lat - dLat)
             .addValue("maxLat", lat + dLat)
             .addValue("minLng", lng - dLng)
@@ -170,7 +180,7 @@ public class SignRepository {
                 rs.getDouble("lat"),
                 rs.getDouble("lng"),
                 rs.getInt("heading_deg"),
-                ClusterStatus.REJECTED.name().equals(rs.getString("status"))));
+                rs.getBoolean("rejected_long_ago")));
   }
 
   public void insertCluster(
@@ -501,15 +511,27 @@ public class SignRepository {
             .addValue("sub", subSignKey));
   }
 
-  /** Người dùng đã có quan sát dương nào cho cụm này chưa. */
-  public boolean contributedBefore(String clusterId, String userId, String exceptObsId) {
+  /**
+   * Người dùng đã góp quan sát dương cho cụm này trong {@link ClusterRules#CONTRIBUTION_HOURS} giờ
+   * trước quan sát {@code obsId} chưa. Tính theo giờ server nhận, app không giả được.
+   */
+  public boolean contributedRecently(String clusterId, String userId, String obsId) {
     Integer n =
         jdbc.queryForObject(
             """
-            SELECT COUNT(*) FROM observations
-            WHERE cluster_id = :c AND user_id = :u AND kind = 'POSITIVE' AND id <> :except
+            SELECT COUNT(*) FROM observations o JOIN observations me ON me.id = :obs
+            WHERE o.cluster_id = :c AND o.user_id = :u AND o.kind = 'POSITIVE' AND o.id <> me.id
+              AND o.created_at > me.created_at - INTERVAL :hours HOUR
             """,
-            Map.of("c", clusterId, "u", userId, "except", exceptObsId),
+            Map.of(
+                "c",
+                clusterId,
+                "u",
+                userId,
+                "obs",
+                obsId,
+                "hours",
+                ClusterRules.CONTRIBUTION_HOURS),
             Integer.class);
     return n != null && n > 0;
   }
