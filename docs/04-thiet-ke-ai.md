@@ -192,13 +192,13 @@ Hướng của biển được lấy bằng hướng đi của xe, dùng khi gom
 
 Chạy trong sign-service. Mỗi quan sát dương được gán vào một **cụm biển** — đại diện cho một biển thật.
 
-**Gán cụm:** tìm cụm cùng nhóm biển, cách ≤ 20 m, hướng lệch ≤ 45°, chưa bị loại; chọn cụm gần nhất; không có thì tạo cụm mới trạng thái `CANDIDATE`. Nếu vị trí đó trùng một cụm quản trị viên đã loại, cụm mới bắt đầu ở `CONFLICT` để quản trị viên quyết định, không tự được công nhận lại. Một cụm có thể nhận quan sát với nhiều mã khác nhau; mỗi mã có tổng trọng số riêng.
+**Gán cụm:** tìm cụm cùng nhóm biển, cách ≤ 20 m, hướng lệch ≤ 45°; chọn cụm gần nhất; không có thì tạo cụm mới trạng thái `CANDIDATE`. Cụm bị loại trong vòng 30 ngày vẫn nhận quan sát và giữ `REJECTED`, để quyết định của quản trị viên có hiệu lực. Quá 30 ngày, quan sát tại chỗ đó tạo cụm mới ở `CONFLICT` để quản trị viên xét lại, không tự được công nhận lại. Một cụm có thể nhận quan sát với nhiều mã khác nhau; mỗi mã có tổng trọng số riêng.
 
 **Trọng số một quan sát:** `w = p × r × k`, trong đó:
 
 - `p`: xác suất (đã hiệu chỉnh) của mã được quan sát;
 - `r`: uy tín người gửi, trong khoảng [0,5; 1,5], khởi đầu 1,0;
-- `k`: hệ số chống lặp — mỗi người chỉ góp trọng số một lần cho một cụm (quan sát sau có `k = 0`). Thời điểm và vị trí do app gửi lên nên không dùng để phân biệt các chuyến; như vậy một tài khoản không thể tự đẩy một cụm lên `VERIFIED`.
+- `k`: hệ số chống lặp — mỗi người góp trọng số tối đa một lần mỗi 12 giờ cho một cụm (quan sát trong 12 giờ sau đó có `k = 0`). Mốc thời gian là giờ server nhận quan sát, vì thời điểm do app gửi lên có thể bị sửa. Một người đi qua nhiều ngày vẫn được tính, nhưng một tài khoản không thể tự đẩy cụm lên `VERIFIED` trong một lần.
 
 **Điểm tin cậy** của mã dẫn đầu `c*` là kỳ vọng hậu nghiệm của phân phối Beta:
 
@@ -221,7 +221,7 @@ stateDiagram-v2
     state "REJECTED" as Rejected
 
     [*] --> Candidate
-    [*] --> Conflict: trùng chỗ cụm đã loại
+    [*] --> Conflict: trùng chỗ cụm đã loại quá 30 ngày
     Candidate --> Verified: tin cậy ≥ 0,8 và ≥ 2 người khác nhau
     Candidate --> Conflict: mã thứ hai ≥ 30% tổng trọng số
     Verified --> Conflict: mã thứ hai ≥ 30% tổng trọng số
@@ -234,7 +234,7 @@ stateDiagram-v2
 
 Cụm `CONFLICT` giữ nguyên trạng thái cho tới khi quản trị viên chốt mã hoặc loại cụm, kể cả khi bằng chứng sau đó nghiêng hẳn về một mã.
 
-**Quan sát âm** được tạo trên thiết bị, không cần gửi lộ trình: app biết các cụm đã tải trước; khi xe đến gần một cụm trong 20 m rồi ra xa quá 50 m mà camera không xác nhận biển cùng mã trong 30 giây, app gửi quan sát âm kèm mã cụm. Xét theo khoảng cách chứ không theo hướng, vì xe đứng yên thì GPS không có hướng.
+**Quan sát âm** được tạo trên thiết bị, không cần gửi lộ trình: app biết các cụm đã tải trước; khi xe đến gần trong 20 m một cụm cùng chiều đi, ở phía trước, rồi ra xa quá 50 m mà camera không xác nhận biển cùng mã trong 30 giây, app gửi quan sát âm kèm mã cụm. Biển dựng cho chiều ngược lại không được xét vì camera không nhìn thấy mặt biển. Việc đã đi qua được xét theo khoảng cách chứ không theo hướng, vì xe đứng yên thì GPS không có hướng.
 
 **Cập nhật uy tín** khi quản trị viên giải quyết một cụm: người có quan sát đúng `r += 0,05`, người có quan sát sai `r −= 0,1`, giới hạn trong [0,5; 1,5].
 
