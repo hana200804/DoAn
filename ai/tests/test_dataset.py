@@ -69,3 +69,19 @@ def test_prepare_keeps_same_named_frames_and_refuses_old_output(tmp_path):
     assert {p.read_bytes() for p in (out / "train" / "images").iterdir()} == {b"route-a", b"route-b"}
     with pytest.raises(FileExistsError):
         dataset.build_detector_dataset(root, manifest, out, lm)
+
+
+def test_names_with_double_underscore_do_not_collide(tmp_path):
+    root, out, manifest = tmp_path / "raw", tmp_path / "out", tmp_path / "m.csv"
+    _make(root, "route-a", "frame__001", "0 0.5 0.5 0.1 0.1\n", b"one")
+    _make(root, "route-a__frame", "001", "0 0.5 0.5 0.1 0.1\n", b"two")
+    lm = LabelMap.load()
+    dataset.write_manifest(root, manifest, lm)
+    rows = [{**r, "split": "train"} for r in dataset.read_manifest(manifest)]
+    with manifest.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys())
+        w.writeheader()
+        w.writerows(rows)
+
+    dataset.build_detector_dataset(root, manifest, out, lm)
+    assert {p.read_bytes() for p in (out / "train" / "images").iterdir()} == {b"one", b"two"}
