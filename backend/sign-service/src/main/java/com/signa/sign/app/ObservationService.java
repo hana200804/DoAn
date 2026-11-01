@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Nhận lô quan sát (FR-14) và gom cụm, tính điểm tin cậy (FR-17). */
@@ -81,7 +82,9 @@ public class ObservationService {
   /** Xác nhận ảnh đã tải lên rồi gom cụm toàn bộ lô. Gọi lại với lô đã xử lý thì không làm gì. */
   // shortcut: xử lý đồng bộ trong request, hai lô gần cùng một biển xử lý cùng lúc có thể tạo hai
   // cụm; chuyển sang một worker đọc hàng đợi (Redis Stream) khi tải vượt NFR-12
-  @Transactional
+  // READ COMMITTED: sau khi khoá dòng cụm phải đọc được quyết định quản trị viên vừa commit, không
+  // đọc snapshot cũ từ đầu transaction
+  @Transactional(isolation = Isolation.READ_COMMITTED)
   public void complete(String userId, String batchId) {
     var batch =
         repo.batch(batchId).orElseThrow(() -> ApiException.notFound("Không tìm thấy lô quan sát"));
@@ -120,9 +123,11 @@ public class ObservationService {
         repo.event(clusterId, null, "STATUS_CHANGED", "CANDIDATE", "CONFLICT", "gần cụm đã loại");
       }
     }
+    // Khoá cụm trước mọi thao tác đọc/ghi bằng chứng, để không chen ngang quyết định quản trị viên
+    repo.lockCluster(clusterId);
     // Mỗi người góp tối đa một lần mỗi 12 giờ cho một cụm, để một tài khoản không tự đẩy cụm lên
     double weight =
-        repo.contributedRecently(clusterId, o.userId(), o.id())
+        repo.contributedRecently(clusterId, o.userId(), o.id(), Kind.POSITIVE)
             ? 0
             : (o.probability() == null ? DEFAULT_PROBABILITY : o.probability())
                 * repo.reputation(o.userId());
@@ -135,7 +140,12 @@ public class ObservationService {
     if (o.clusterId() == null || repo.cluster(o.clusterId()).isEmpty()) {
       return;
     }
-    double weight = repo.reputation(o.userId());
+    repo.lockCluster(o.clusterId());
+    // Một lượt đi qua của mỗi người trong 12 giờ, như quan sát dương
+    double weight =
+        repo.contributedRecently(o.clusterId(), o.userId(), o.id(), Kind.NEGATIVE)
+            ? 0
+            : repo.reputation(o.userId());
     repo.addNegativeWeight(o.clusterId(), weight);
     repo.assignObservation(o.id(), o.clusterId(), weight, null, null);
     reassess(o.clusterId(), o);

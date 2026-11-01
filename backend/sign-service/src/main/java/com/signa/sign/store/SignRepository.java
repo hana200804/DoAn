@@ -1,5 +1,6 @@
 package com.signa.sign.store;
 
+import com.signa.sign.api.SignDtos.Kind;
 import com.signa.sign.domain.ClusterRules;
 import com.signa.sign.domain.ClusterRules.Candidate;
 import com.signa.sign.domain.ClusterStatus;
@@ -135,11 +136,17 @@ public class SignRepository {
   public Optional<Cluster> clusterForUpdate(String id) {
     return jdbc
         .query(
-            CLUSTER_SELECT + " WHERE c.id = :id FOR UPDATE",
+            CLUSTER_SELECT + " WHERE c.id = :id FOR UPDATE OF c",
             Map.of("id", id),
             SignRepository::cluster)
         .stream()
         .findFirst();
+  }
+
+  /** Khoá dòng cụm tới hết transaction. */
+  public void lockCluster(String id) {
+    jdbc.queryForList(
+        "SELECT id FROM sign_clusters WHERE id = :id FOR UPDATE", Map.of("id", id), String.class);
   }
 
   public List<Cluster> clustersByStatus(ClusterStatus status, int limit) {
@@ -239,8 +246,8 @@ public class SignRepository {
         SELECT c.negative_weight, c.admin_locked, c.sign_code, c.status,
           (SELECT COUNT(DISTINCT o.user_id) FROM observations o
              WHERE o.cluster_id = c.id AND o.kind = 'POSITIVE') AS distinct_users,
-          (SELECT COUNT(DISTINCT n.user_id) FROM observations n
-             WHERE n.cluster_id = c.id AND n.kind = 'NEGATIVE'
+          (SELECT COUNT(*) FROM observations n
+             WHERE n.cluster_id = c.id AND n.kind = 'NEGATIVE' AND n.weight > 0
                AND n.observed_at > COALESCE((SELECT MAX(p.observed_at) FROM observations p
                  WHERE p.cluster_id = c.id AND p.kind = 'POSITIVE'), '1970-01-01')) AS neg_passes
         FROM sign_clusters c WHERE c.id = :id
@@ -512,15 +519,17 @@ public class SignRepository {
   }
 
   /**
-   * Người dùng đã góp quan sát dương cho cụm này trong {@link ClusterRules#CONTRIBUTION_HOURS} giờ
-   * trước quan sát {@code obsId} chưa. Tính theo giờ server nhận, app không giả được.
+   * Người dùng đã góp trọng số (quan sát cùng loại, weight &gt; 0) cho cụm này trong {@link
+   * ClusterRules#CONTRIBUTION_HOURS} giờ trước quan sát {@code obsId} chưa. Tính theo giờ server
+   * nhận, app không giả được; lần bị bỏ (weight = 0) không kéo dài cửa sổ.
    */
-  public boolean contributedRecently(String clusterId, String userId, String obsId) {
+  public boolean contributedRecently(String clusterId, String userId, String obsId, Kind kind) {
     Integer n =
         jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM observations o JOIN observations me ON me.id = :obs
-            WHERE o.cluster_id = :c AND o.user_id = :u AND o.kind = 'POSITIVE' AND o.id <> me.id
+            WHERE o.cluster_id = :c AND o.user_id = :u AND o.kind = :kind AND o.weight > 0
+              AND o.id <> me.id
               AND o.created_at > me.created_at - INTERVAL :hours HOUR
             """,
             Map.of(
@@ -530,6 +539,8 @@ public class SignRepository {
                 userId,
                 "obs",
                 obsId,
+                "kind",
+                kind.name(),
                 "hours",
                 ClusterRules.CONTRIBUTION_HOURS),
             Integer.class);

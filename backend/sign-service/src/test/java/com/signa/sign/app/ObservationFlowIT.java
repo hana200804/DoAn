@@ -2,7 +2,9 @@ package com.signa.sign.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
@@ -19,12 +21,17 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.testcontainers.containers.MySQLContainer;
@@ -42,7 +49,7 @@ class ObservationFlowIT {
   @MockBean CropStorage storage;
 
   @Autowired ObservationService observations;
-  @Autowired SignRepository repo;
+  @SpyBean SignRepository repo;
   @Autowired ReviewService reviews;
   @Autowired NamedParameterJdbcTemplate jdbc;
 
@@ -159,6 +166,142 @@ class ObservationFlowIT {
     doReturn(true).when(storage).exists(anyString());
     observations.complete("user-s", res.batchId());
     assertThat(repo.observations(res.batchId()).get(0).cropKey()).isNotNull();
+  }
+
+  @Test
+  void adminDecisionSurvivesConcurrentComplete() throws Exception {
+    String cluster = submit("user-a1");
+    repo.setStatus(cluster, ClusterStatus.CONFLICT, "P.123a", false);
+    var pending = observations.createBatch("racer", UUID.randomUUID().toString(), batch(0.95));
+
+    // complete dừng sau khi transaction đã đọc dữ liệu; quản trị viên chốt mã và commit trong lúc
+    // đó
+    var armed = new AtomicBoolean(true);
+    var paused = new CountDownLatch(1);
+    var resume = new CountDownLatch(1);
+    doAnswer(
+            inv -> {
+              if (armed.compareAndSet(true, false)) {
+                paused.countDown();
+                resume.await(10, TimeUnit.SECONDS);
+              }
+              return inv.callRealMethod();
+            })
+        .when(repo)
+        .candidatesNear(anyDouble(), anyDouble(), anyDouble());
+    try (var pool = Executors.newSingleThreadExecutor()) {
+      var done = pool.submit(() -> observations.complete("racer", pending.batchId()));
+      assertThat(paused.await(10, TimeUnit.SECONDS)).isTrue();
+      reviews.resolveConflict(cluster, "admin", "P.123b", false, "duyệt");
+      resume.countDown();
+      done.get(20, TimeUnit.SECONDS);
+    }
+
+    var c = repo.cluster(cluster).orElseThrow();
+    assertThat(c.signCode()).isEqualTo("P.123b");
+    assertThat(c.status()).isEqualTo(ClusterStatus.VERIFIED);
+  }
+
+  @Test
+  void negativePassesCountOnlyProcessedPassesAndRepeatDriversCount() {
+    String cluster = verifiedCluster();
+
+    // Lô âm đã tạo nhưng chưa complete không phải bằng chứng
+    for (int i = 0; i < 3; i++) {
+      observations.createBatch(
+          "pending-" + i, UUID.randomUUID().toString(), negativeBatch(cluster));
+    }
+    assertThat(repo.facts(cluster).negativePasses()).isZero();
+
+    // Cùng một người đi qua ba lượt cách nhau hơn 12 giờ là ba lượt
+    for (int i = 0; i < 3; i++) {
+      var b =
+          observations.createBatch(
+              "commuter", UUID.randomUUID().toString(), negativeBatch(cluster));
+      observations.complete("commuter", b.batchId());
+      jdbc.update(
+          "UPDATE observations SET created_at = created_at - INTERVAL 13 HOUR WHERE user_id = :u",
+          Map.of("u", "commuter"));
+    }
+    assertThat(repo.facts(cluster).negativePasses()).isEqualTo(3);
+    assertThat(repo.cluster(cluster).orElseThrow().status())
+        .isEqualTo(ClusterStatus.MISSING_SUSPECTED);
+  }
+
+  @Test
+  void blockedPassDoesNotExtendTheTwelveHourWindow() {
+    String user = "d-" + UUID.randomUUID().toString().substring(0, 8);
+    String cluster = submit(user);
+    double one = repo.codeWeights(cluster).get("P.123a");
+    submit(user); // ngay sau đó: bị bỏ, weight 0
+    // Lần góp thật cách 16 giờ, lần bị bỏ cách 8 giờ
+    jdbc.update(
+        "UPDATE observations SET created_at = NOW(3) - INTERVAL"
+            + " (CASE WHEN weight > 0 THEN 16 ELSE 8 END) HOUR WHERE user_id = :u",
+        Map.of("u", user));
+    submit(user);
+    assertThat(repo.codeWeights(cluster).get("P.123a")).isEqualTo(2 * one);
+  }
+
+  @Test
+  void duplicateReportsSentTogetherCreateOnlyOne() throws Exception {
+    String cluster = submit("reporter-c");
+    var first = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    doAnswer(
+            inv -> {
+              Object r = inv.callRealMethod();
+              if (first.getCount() > 0) {
+                first.countDown();
+                release.await(10, TimeUnit.SECONDS);
+              }
+              return r;
+            })
+        .when(repo)
+        .hasPendingReport(cluster, "reporter");
+    try (var pool = Executors.newFixedThreadPool(2)) {
+      var a = pool.submit(() -> reviews.report(cluster, "reporter", "NOT_EXIST", null));
+      assertThat(first.await(10, TimeUnit.SECONDS)).isTrue();
+      var b = pool.submit(() -> reviews.report(cluster, "reporter", "NOT_EXIST", null));
+      Thread.sleep(500); // request thứ hai phải chờ khoá cụm
+      release.countDown();
+      a.get(20, TimeUnit.SECONDS);
+      assertThatThrownBy(() -> b.get(20, TimeUnit.SECONDS)).hasCauseInstanceOf(ApiException.class);
+    }
+    assertThat(
+            jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sign_reports WHERE cluster_id = :c AND user_id = 'reporter'",
+                Map.of("c", cluster),
+                Integer.class))
+        .isEqualTo(1);
+  }
+
+  private String verifiedCluster() {
+    String cluster = null;
+    for (int i = 0; i < 4; i++) {
+      cluster = submit("v" + i + "-" + UUID.randomUUID().toString().substring(0, 8));
+    }
+    assertThat(repo.cluster(cluster).orElseThrow().status()).isEqualTo(ClusterStatus.VERIFIED);
+    return cluster;
+  }
+
+  private CreateBatchRequest negativeBatch(String clusterId) {
+    var obs =
+        new ObservationIn(
+            "n-1",
+            Kind.NEGATIVE,
+            null,
+            clusterId,
+            null,
+            null,
+            null,
+            new LatLng(lat, lng),
+            90,
+            null,
+            null,
+            false,
+            Instant.now().plusSeconds(5));
+    return new CreateBatchRequest("model-v0.1", 1, "test", List.of(obs));
   }
 
   private String submit(String user) {
