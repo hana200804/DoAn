@@ -12,6 +12,7 @@ sign_height_m:
   auxiliary: 0.35
   other: 0.70
 
+# Chỉ thêm mã mới ở cuối: thứ tự là số lớp trong file nhãn đã gán
 codes:
   - {code: P.102, group: prohibitory, name: Cấm đi ngược chiều}
   - {code: P.103a, group: prohibitory, name: Cấm xe ô tô}
@@ -25,8 +26,6 @@ codes:
   - {code: P.127_60, group: prohibitory, name: Tốc độ tối đa cho phép 60 km/h, speed_kmh: 60}
   - {code: P.127_70, group: prohibitory, name: Tốc độ tối đa cho phép 70 km/h, speed_kmh: 70}
   - {code: P.127_80, group: prohibitory, name: Tốc độ tối đa cho phép 80 km/h, speed_kmh: 80}
-  - {code: DP.134, group: prohibitory, name: Hết tốc độ tối đa cho phép, ends_speed_limit: true}
-  - {code: DP.135, group: prohibitory, name: Hết tất cả các lệnh cấm, ends_speed_limit: true}
   - {code: R.303, group: mandatory, name: Nơi giao nhau chạy theo vòng xuyến}
   - {code: R.302a, group: mandatory, name: Hướng phải đi vòng chướng ngại vật sang phải}
   - {code: W.207a, group: warning, name: Giao nhau với đường không ưu tiên}
@@ -35,3 +34,5 @@ codes:
   - {code: W.245a, group: warning, name: Đi chậm}
   - {code: S.508a, group: auxiliary, name: Biểu thị thời gian}
   - {code: S.509a, group: auxiliary, name: Thuyết minh biển chính}
+  - {code: DP.134, group: prohibitory, name: Hết tốc độ tối đa cho phép, ends_speed_limit: true}
+  - {code: DP.135, group: prohibitory, name: Hết tất cả các lệnh cấm, ends_speed_limit: true}
