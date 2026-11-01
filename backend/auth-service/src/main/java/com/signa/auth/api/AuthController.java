@@ -9,6 +9,7 @@ import com.signa.auth.api.AuthDtos.UserView;
 import com.signa.auth.application.AuthService;
 import com.signa.common.security.Authenticated;
 import com.signa.common.security.CurrentSession;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,8 +35,10 @@ public class AuthController {
   }
 
   @PostMapping("/login")
-  public LoginResponse login(@Valid @RequestBody LoginRequest req) {
-    return auth.login(req.email(), req.password());
+  public LoginResponse login(@Valid @RequestBody LoginRequest req, HttpServletRequest http) {
+    // nginx ghi đè X-Real-IP bằng địa chỉ thật; service không mở cổng ra ngoài
+    String ip = http.getHeader("X-Real-IP");
+    return auth.login(req.email(), req.password(), ip != null ? ip : http.getRemoteAddr());
   }
 
   @PostMapping("/logout")

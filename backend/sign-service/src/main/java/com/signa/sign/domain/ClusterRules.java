@@ -17,21 +17,36 @@ public final class ClusterRules {
   public static final int MIN_DISTINCT_USERS = 2;
   public static final double CONFLICT_SHARE = 0.3;
   public static final int MISSING_PASSES = 3;
-  public static final long SAME_TRIP_MINUTES = 30;
 
   private ClusterRules() {}
 
   /** Cụm ứng viên đã đọc từ CSDL. */
-  public record Candidate(String id, String group, double lat, double lng, int headingDeg) {}
+  public record Candidate(
+      String id, String group, double lat, double lng, int headingDeg, boolean rejected) {}
 
-  /** Chọn cụm gần nhất cùng nhóm, trong bán kính và cùng hướng đi; rỗng nếu cần tạo cụm mới. */
+  /**
+   * Chọn cụm gần nhất cùng nhóm, trong bán kính và cùng hướng đi; rỗng nếu cần tạo cụm mới. Cụm đã
+   * bị loại không nhận thêm quan sát.
+   */
   public static Optional<Candidate> pick(
       List<Candidate> candidates, String group, double lat, double lng, int headingDeg) {
     return candidates.stream()
-        .filter(c -> c.group().equals(group))
-        .filter(c -> Geo.headingDiff(c.headingDeg(), headingDeg) <= MATCH_HEADING_DEG)
-        .filter(c -> Geo.distanceM(c.lat(), c.lng(), lat, lng) <= MATCH_RADIUS_M)
+        .filter(c -> !c.rejected() && matches(c, group, lat, lng, headingDeg))
         .min(Comparator.comparingDouble(c -> Geo.distanceM(c.lat(), c.lng(), lat, lng)));
+  }
+
+  /** Vị trí này trùng một cụm quản trị viên đã loại. */
+  public static boolean nearRejected(
+      List<Candidate> candidates, String group, double lat, double lng, int headingDeg) {
+    return candidates.stream()
+        .anyMatch(c -> c.rejected() && matches(c, group, lat, lng, headingDeg));
+  }
+
+  private static boolean matches(
+      Candidate c, String group, double lat, double lng, int headingDeg) {
+    return c.group().equals(group)
+        && Geo.headingDiff(c.headingDeg(), headingDeg) <= MATCH_HEADING_DEG
+        && Geo.distanceM(c.lat(), c.lng(), lat, lng) <= MATCH_RADIUS_M;
   }
 
   /** Bằng chứng của một cụm. */

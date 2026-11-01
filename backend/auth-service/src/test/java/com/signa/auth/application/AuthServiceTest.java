@@ -67,7 +67,7 @@ class AuthServiceTest {
     User user = User.create("a@example.com", encoder.encode("password123"), "A", Role.DRIVER);
     when(users.findByEmail("a@example.com")).thenReturn(Optional.of(user));
 
-    assertThatThrownBy(() -> service.login("a@example.com", "wrong-password"))
+    assertThatThrownBy(() -> service.login("a@example.com", "wrong-password", "10.0.0.1"))
         .extracting(e -> ((ApiException) e).code())
         .isEqualTo(ErrorCode.UNAUTHENTICATED);
     verify(sessions, never()).create(any());
@@ -79,12 +79,12 @@ class AuthServiceTest {
     when(users.findByEmail("a@example.com")).thenReturn(Optional.of(user));
     when(sessions.create(any())).thenReturn("session-1");
 
-    var res = service.login("A@example.com", "password123");
+    var res = service.login("A@example.com", "password123", "10.0.0.1");
 
     assertThat(res.sessionId()).isEqualTo("session-1");
     assertThat(res.user().role()).isEqualTo(Role.ADMIN);
-    verify(rateLimiter).check(eq("login:a@example.com"), anyInt(), any());
-    verify(rateLimiter).reset("login:a@example.com");
+    verify(rateLimiter).check(eq("login:a@example.com:10.0.0.1"), anyInt(), any());
+    verify(rateLimiter).reset("login:a@example.com:10.0.0.1");
   }
 
   @Test

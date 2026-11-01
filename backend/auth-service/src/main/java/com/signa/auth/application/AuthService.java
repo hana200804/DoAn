@@ -62,9 +62,11 @@ public class AuthService {
   }
 
   @Transactional(readOnly = true)
-  public LoginResponse login(String email, String password) {
+  public LoginResponse login(String email, String password, String clientIp) {
     String normalized = normalize(email);
-    rateLimiter.check("login:" + normalized, LOGIN_LIMIT, LOGIN_WINDOW);
+    // Đếm theo cả IP: người ngoài nhập sai liên tục không khoá được chủ tài khoản
+    String limitKey = "login:" + normalized + ":" + clientIp;
+    rateLimiter.check(limitKey, LOGIN_LIMIT, LOGIN_WINDOW);
     User user =
         users
             .findByEmail(normalized)
@@ -73,7 +75,7 @@ public class AuthService {
     if (user.getStatus() == UserStatus.LOCKED) {
       throw ApiException.forbidden("Tài khoản đã bị khoá");
     }
-    rateLimiter.reset("login:" + normalized);
+    rateLimiter.reset(limitKey);
     String sessionId = sessions.create(user.toPrincipal());
     return new LoginResponse(sessionId, Instant.now().plus(sessions.ttl()), UserView.of(user));
   }

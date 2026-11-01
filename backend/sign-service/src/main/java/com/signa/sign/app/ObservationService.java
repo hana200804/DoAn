@@ -11,6 +11,7 @@ import com.signa.sign.domain.ClusterRules;
 import com.signa.sign.domain.ClusterRules.Assessment;
 import com.signa.sign.domain.ClusterRules.Candidate;
 import com.signa.sign.domain.ClusterRules.Evidence;
+import com.signa.sign.domain.ClusterStatus;
 import com.signa.sign.domain.Geo;
 import com.signa.sign.store.CropStorage;
 import com.signa.sign.store.SignRepository;
@@ -22,6 +23,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 /** Nhận lô quan sát (FR-14) và gom cụm, tính điểm tin cậy (FR-17). */
 @Service
 public class ObservationService {
+
+  private static final Logger log = LoggerFactory.getLogger(ObservationService.class);
 
   private static final double DEFAULT_PROBABILITY = 0.5;
 
@@ -64,6 +69,9 @@ public class ObservationService {
     for (int i = 0; i < req.observations().size(); i++) {
       Observation o =
           toObservation(batchId, userId, req.observations().get(i), "observations[" + i + "]");
+      if (o == null) {
+        continue;
+      }
       repo.insertObservation(batchId, o);
       saved.add(o);
     }
@@ -102,14 +110,19 @@ public class ObservationService {
         ClusterRules.pick(candidates, group, o.lat(), o.lng(), o.headingDeg())
             .map(Candidate::id)
             .orElse(null);
-    boolean created = clusterId == null;
-    if (created) {
+    if (clusterId == null) {
       clusterId = UUID.randomUUID().toString();
       repo.insertCluster(clusterId, o.signCode(), o.lat(), o.lng(), o.headingDeg(), o.observedAt());
       repo.event(clusterId, null, "CREATED", null, o.signCode(), null);
+      // Cạnh chỗ quản trị viên đã loại: để quản trị viên quyết định, không tự công nhận lại
+      if (ClusterRules.nearRejected(candidates, group, o.lat(), o.lng(), o.headingDeg())) {
+        repo.setStatus(clusterId, ClusterStatus.CONFLICT, o.signCode(), false);
+        repo.event(clusterId, null, "STATUS_CHANGED", "CANDIDATE", "CONFLICT", "gần cụm đã loại");
+      }
     }
+    // Mỗi người chỉ góp trọng số một lần cho một cụm, để một tài khoản không tự đẩy cụm lên
     double weight =
-        repo.seenInSameTrip(clusterId, o.userId(), o.observedAt(), o.id())
+        repo.contributedBefore(clusterId, o.userId(), o.id())
             ? 0
             : (o.probability() == null ? DEFAULT_PROBABILITY : o.probability())
                 * repo.reputation(o.userId());
@@ -167,6 +180,7 @@ public class ObservationService {
     }
   }
 
+  /** Null nếu quan sát dương có mã biển không dùng được. */
   private Observation toObservation(String batchId, String userId, ObservationIn in, String field) {
     String id = UUID.randomUUID().toString();
     if (in.kind() == Kind.NEGATIVE) {
@@ -193,14 +207,16 @@ public class ObservationService {
           null,
           in.observedAt());
     }
+    // Mã ngừng dùng hoặc chưa có trên server: bỏ riêng quan sát này, không làm hỏng cả lô
     SignType type =
         Optional.ofNullable(in.signCode())
             .flatMap(repo::signType)
             .filter(SignType::active)
-            .orElseThrow(
-                () ->
-                    ApiException.validation(
-                        field + ".signCode", "mã biển không có trong danh mục"));
+            .orElse(null);
+    if (type == null) {
+      log.info("Bỏ {} vì mã biển {} không dùng được", field, in.signCode());
+      return null;
+    }
     Double p =
         in.classProbs() == null
             ? null

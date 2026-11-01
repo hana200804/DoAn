@@ -4,11 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.signa.common.error.ApiException;
 import com.signa.common.geo.LatLng;
 import java.io.Serializable;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -20,6 +24,8 @@ import org.springframework.web.util.UriBuilder;
  */
 @Component
 public class VietMapClient {
+
+  private static final Logger log = LoggerFactory.getLogger(VietMapClient.class);
 
   public record Place(String refId, String name, String address, LatLng location)
       implements Serializable {}
@@ -34,7 +40,11 @@ public class VietMapClient {
       RestClient.Builder builder,
       @Value("${signa.vietmap.base-url}") String baseUrl,
       @Value("${signa.vietmap.api-key}") String apiKey) {
-    this.http = builder.baseUrl(baseUrl).build();
+    // Mặc định không có timeout: VietMap treo sẽ giữ luồng xử lý request mãi
+    var factory = new SimpleClientHttpRequestFactory();
+    factory.setConnectTimeout(Duration.ofSeconds(5));
+    factory.setReadTimeout(Duration.ofSeconds(10));
+    this.http = builder.baseUrl(baseUrl).requestFactory(factory).build();
     this.apiKey = apiKey;
   }
 
@@ -118,7 +128,9 @@ public class VietMapClient {
       }
       return body;
     } catch (RestClientException e) {
-      throw ApiException.upstream("Không gọi được VietMap: " + e.getMessage());
+      // Thông báo của Spring có cả URL chứa apikey, không được trả cho client
+      log.warn("Gọi VietMap lỗi: {}", e.getMostSpecificCause().toString());
+      throw ApiException.upstream("Không gọi được VietMap");
     }
   }
 }

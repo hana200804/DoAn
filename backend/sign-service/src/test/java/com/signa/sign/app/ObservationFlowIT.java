@@ -84,7 +84,42 @@ class ObservationFlowIT {
     String first = submit("user-r1");
     repo.setStatus(first, ClusterStatus.REJECTED, "P.123a", false);
 
-    assertThat(submit("user-r2")).isNotEqualTo(first);
+    String second = submit("user-r2");
+    assertThat(second).isNotEqualTo(first);
+    assertThat(repo.cluster(second).orElseThrow().status()).isEqualTo(ClusterStatus.CONFLICT);
+  }
+
+  @Test
+  void sameUserAddsWeightOnlyOnceAndUnknownCodeIsSkipped() {
+    String cluster = submit("user-w");
+    double once = repo.codeWeights(cluster).get("P.123a");
+    submit("user-w");
+    assertThat(repo.codeWeights(cluster).get("P.123a")).isEqualTo(once);
+
+    var req = batch(0.9);
+    var bad = req.observations().get(0);
+    var unknown =
+        new ObservationIn(
+            "o-2",
+            bad.kind(),
+            "X.999",
+            null,
+            bad.detectorGroup(),
+            List.of(),
+            bad.voteShare(),
+            bad.location(),
+            bad.headingDeg(),
+            bad.distanceM(),
+            bad.frames(),
+            false,
+            bad.observedAt());
+    var res =
+        observations.createBatch(
+            "user-u",
+            UUID.randomUUID().toString(),
+            new CreateBatchRequest("model-v0.1", 1, "test", List.of(bad, unknown)));
+    assertThat(res.uploads()).hasSize(1);
+    assertThat(repo.observations(res.batchId())).hasSize(1);
   }
 
   @Test

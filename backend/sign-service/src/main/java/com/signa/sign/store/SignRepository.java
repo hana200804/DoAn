@@ -7,7 +7,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -149,16 +148,15 @@ public class SignRepository {
         SignRepository::cluster);
   }
 
-  /** Cụm chưa bị loại trong ô vuông quanh một điểm, dùng làm ứng viên khi gom cụm. */
+  /** Cụm trong ô vuông quanh một điểm (kể cả cụm đã loại), dùng làm ứng viên khi gom cụm. */
   public List<Candidate> candidatesNear(double lat, double lng, double radiusM) {
     double dLat = Geo.metersToLatDeg(radiusM);
     double dLng = Geo.metersToLngDeg(radiusM, lat);
     return jdbc.query(
         """
-        SELECT c.id, t.group_code, c.lat, c.lng, c.heading_deg FROM sign_clusters c
+        SELECT c.id, t.group_code, c.lat, c.lng, c.heading_deg, c.status FROM sign_clusters c
         JOIN sign_types t ON t.code = c.sign_code
         WHERE c.lat BETWEEN :minLat AND :maxLat AND c.lng BETWEEN :minLng AND :maxLng
-          AND c.status <> 'REJECTED'
         """,
         new MapSqlParameterSource()
             .addValue("minLat", lat - dLat)
@@ -171,7 +169,8 @@ public class SignRepository {
                 rs.getString("group_code"),
                 rs.getDouble("lat"),
                 rs.getDouble("lng"),
-                rs.getInt("heading_deg")));
+                rs.getInt("heading_deg"),
+                ClusterStatus.REJECTED.name().equals(rs.getString("status"))));
   }
 
   public void insertCluster(
@@ -502,21 +501,15 @@ public class SignRepository {
             .addValue("sub", subSignKey));
   }
 
-  /** Người dùng đã có quan sát dương cho cụm này trong cùng chuyến đi chưa. */
-  public boolean seenInSameTrip(String clusterId, String userId, Instant at, String exceptObsId) {
+  /** Người dùng đã có quan sát dương nào cho cụm này chưa. */
+  public boolean contributedBefore(String clusterId, String userId, String exceptObsId) {
     Integer n =
         jdbc.queryForObject(
             """
             SELECT COUNT(*) FROM observations
             WHERE cluster_id = :c AND user_id = :u AND kind = 'POSITIVE' AND id <> :except
-              AND observed_at BETWEEN :from AND :to
             """,
-            new MapSqlParameterSource()
-                .addValue("c", clusterId)
-                .addValue("u", userId)
-                .addValue("except", exceptObsId)
-                .addValue("from", Timestamp.from(at.minus(30, ChronoUnit.MINUTES)))
-                .addValue("to", Timestamp.from(at.plus(30, ChronoUnit.MINUTES))),
+            Map.of("c", clusterId, "u", userId, "except", exceptObsId),
             Integer.class);
     return n != null && n > 0;
   }

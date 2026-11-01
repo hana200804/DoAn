@@ -16,7 +16,7 @@ class ClusterRulesTest {
 
   @Test
   void ut_b01_nearbySameHeadingJoinsCluster_andFourUsersVerify() {
-    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90);
+    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90, false);
     double eightMetersNorth = LAT + Geo.metersToLatDeg(8);
 
     assertThat(ClusterRules.pick(List.of(c), "PROHIBITORY", eightMetersNorth, LNG, 95)).contains(c);
@@ -39,14 +39,23 @@ class ClusterRulesTest {
 
   @Test
   void ut_b03_oppositeHeadingCreatesSeparateCluster() {
-    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90);
+    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90, false);
 
     assertThat(ClusterRules.pick(List.of(c), "PROHIBITORY", LAT, LNG + 0.00004, 270)).isEmpty();
   }
 
   @Test
+  void rejectedClusterIsNotPickedButIsReported() {
+    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90, true);
+
+    assertThat(ClusterRules.pick(List.of(c), "PROHIBITORY", LAT, LNG, 90)).isEmpty();
+    assertThat(ClusterRules.nearRejected(List.of(c), "PROHIBITORY", LAT, LNG, 90)).isTrue();
+    assertThat(ClusterRules.nearRejected(List.of(c), "WARNING", LAT, LNG, 90)).isFalse();
+  }
+
+  @Test
   void otherGroupOrFarAwayDoesNotMatch() {
-    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90);
+    Candidate c = new Candidate("c1", "PROHIBITORY", LAT, LNG, 90, false);
     double thirtyMetersNorth = LAT + Geo.metersToLatDeg(30);
 
     assertThat(ClusterRules.pick(List.of(c), "WARNING", LAT, LNG, 90)).isEmpty();

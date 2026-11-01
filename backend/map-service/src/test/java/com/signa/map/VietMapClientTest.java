@@ -1,11 +1,24 @@
 package com.signa.map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.signa.common.error.ApiException;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 class VietMapClientTest {
+
+  @Test
+  void networkErrorDoesNotLeakApiKey() {
+    var client = new VietMapClient(RestClient.builder(), "http://127.0.0.1:1", "SECRET-KEY");
+
+    assertThatThrownBy(() -> client.search("Hà Nội", null, null))
+        .isInstanceOf(ApiException.class)
+        .message()
+        .doesNotContain("SECRET-KEY");
+  }
 
   @Test
   void parsesRouteGeoJsonAsLatLngAndSeconds() throws Exception {

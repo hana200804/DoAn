@@ -43,6 +43,10 @@ management:
     health:
       probes:
         enabled: true
+  # Không có SMTP thì OTP chỉ ghi log; kiểm tra kết nối mail sẽ báo DOWN giả
+  health:
+    mail:
+      enabled: false
 
 springdoc:
   api-docs:
