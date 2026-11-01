@@ -12,6 +12,8 @@ INSERT INTO sign_types (code, group_code, name, speed_kmh) VALUES
   ('P.127_60', 'PROHIBITORY', 'Tốc độ tối đa cho phép 60 km/h', 60),
   ('P.127_70', 'PROHIBITORY', 'Tốc độ tối đa cho phép 70 km/h', 70),
   ('P.127_80', 'PROHIBITORY', 'Tốc độ tối đa cho phép 80 km/h', 80),
+  ('DP.134',   'PROHIBITORY', 'Hết tốc độ tối đa cho phép', NULL),
+  ('DP.135',   'PROHIBITORY', 'Hết tất cả các lệnh cấm', NULL),
   ('R.303',    'MANDATORY',   'Nơi giao nhau chạy theo vòng xuyến', NULL),
   ('R.302a',   'MANDATORY',   'Hướng phải đi vòng chướng ngại vật sang phải', NULL),
   ('W.207a',   'WARNING',     'Giao nhau với đường không ưu tiên', NULL),
