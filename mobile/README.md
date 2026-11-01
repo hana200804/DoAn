@@ -2,7 +2,17 @@
 
 Ứng dụng Android cho người lái: nhận diện biển báo ngay trên điện thoại, cảnh báo bằng giọng nói, xem bản đồ biển báo và dẫn đường.
 
-> **Trạng thái:** chưa có mã nguồn. Tài liệu này là đặc tả phạm vi và quy ước trước khi code.
+> **Trạng thái:** đã khởi tạo project Android và bộ giao diện nền tảng. Các chức năng nghiệp vụ bên dưới vẫn là phạm vi dự kiến, chưa được tích hợp.
+
+## Tiến độ giao diện
+
+- Có theme sáng/tối, kiểu chữ và hình dạng dùng chung trong `ui/theme/`.
+- Có nút chính, thẻ thông tin, nhãn trạng thái và biểu tượng giới hạn tốc độ trong `ui/components/`.
+- `MainActivity` mở `ui/navigation/SignaApp.kt`: Navigation Compose điều hướng năm tab Lái xe, Bản đồ, Tra cứu, Cài đặt và Tài khoản, có lưu/khôi phục trạng thái tab.
+- Có trang chi tiết biển minh họa và form đăng nhập, đăng ký, quên mật khẩu, nhập OTP/đặt lại mật khẩu, đổi mật khẩu; các nút gửi dữ liệu vẫn vô hiệu hóa.
+- Cài đặt cho phép thử loại xe và công tắc; trạng thái chỉ dùng cho giao diện, chưa lưu bằng DataStore hoặc áp dụng vào nghiệp vụ.
+- Tốc độ và giới hạn hiển thị trạng thái chưa có dữ liệu; camera chưa kết nối. Bản đồ là hình minh họa; chưa tích hợp VietMap, GPS, AI, API hoặc gửi quan sát.
+- Xem thử bằng cách chạy cấu hình `app` trên thiết bị. `SignaApp` có Preview sáng/tối; `DriveScreen` có thêm Preview cỡ chữ lớn.
 
 ## Mục lục
 
