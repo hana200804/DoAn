@@ -90,22 +90,20 @@ backend/
 
 ## Cài đặt và chạy
 
-Yêu cầu: JDK 21, Docker.
+Yêu cầu: Docker (để build và chạy), JDK 21 (để chạy test ngoài Docker).
+
+Cả ba service chạy cùng hạ tầng bằng Docker Compose; điểm vào duy nhất là nginx ở cổng 8080:
 
 ```bash
-# Chạy từ thư mục gốc của repo
-# Hạ tầng (MySQL, Redis, MinIO)
-docker compose -f infra/docker-compose.yml up -d mysql redis minio
-
-# Chạy một service
-cd backend
-cp sign-service/.env.example sign-service/.env
-./gradlew :sign-service:bootRun
+cd infra
+cp .env.example .env    # đổi mật khẩu, điền ADMIN_*, VIETMAP_API_KEY, MINIO_PUBLIC_ENDPOINT
+docker compose up -d --build
+curl http://localhost:8080/api/v1/signs?bbox=105.8,21.0,105.9,21.1
 ```
 
-Mỗi service nạp file `.env` của mình qua `spring.config.import=optional:file:.env[.properties]` trong `application.yml`; biến môi trường thật luôn được ưu tiên.
+Biến môi trường lấy từ `infra/.env`; giá trị mặc định cho từng service nằm trong `application.yml` của service đó. Để trống `MAIL_HOST` thì OTP được ghi ra log của auth-service thay vì gửi email.
 
-Swagger UI: `http://localhost:8083/swagger-ui.html`.
+Swagger UI có trong từng service (`/swagger-ui.html`) nhưng nginx không công bố ra ngoài; xem bằng `docker compose exec` hoặc mở cổng service khi phát triển.
 
 ## Biến môi trường
 
@@ -113,18 +111,18 @@ Swagger UI: `http://localhost:8083/swagger-ui.html`.
 | --- | --- | --- |
 | `DB_URL`, `DB_USER`, `DB_PASSWORD` | auth, sign | Kết nối MySQL |
 | `REDIS_HOST`, `REDIS_PORT` | tất cả | Redis |
-| `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` | sign | MinIO |
-| `AI_SERVICE_ADDR` | sign | Địa chỉ gRPC ai-service, ví dụ `ai-service:9090` |
-| `VIETMAP_API_KEY` | map | Khoá VietMap |
-| `MAIL_USERNAME`, `MAIL_PASSWORD` | auth | SMTP gửi OTP |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | auth | Tài khoản quản trị tạo lúc khởi động (mật khẩu ≥ 12 ký tự) |
+| `MINIO_ENDPOINT`, `MINIO_PUBLIC_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET` | sign | Kho ảnh S3 (RustFS/MinIO); địa chỉ công khai dùng để ký presigned URL |
+| `VIETMAP_API_KEY`, `VIETMAP_BASE_URL` | map | VietMap |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | auth | SMTP gửi OTP (Compose chuyển thành `SPRING_MAIL_*`); host trống thì chỉ ghi log |
 
 ## Kiểm thử
 
 | Loại | Công cụ | Lệnh |
 | --- | --- | --- |
 | Unit (domain: gom cụm, điểm tin cậy) | JUnit 5, AssertJ | `./gradlew test` |
-| Tích hợp (JPA, Redis, MinIO) | Testcontainers | `./gradlew integrationTest` |
-| Hợp đồng gRPC | Test với stub ai-service | `./gradlew :sign-service:test` |
+| Tích hợp (MySQL, Redis thật) | Testcontainers, cần Docker | `./gradlew test -Pintegration` |
+| Định dạng mã | Spotless, google-java-format | `./gradlew spotlessCheck` (sửa: `spotlessApply`) |
 
 ## Tài liệu liên quan
 
