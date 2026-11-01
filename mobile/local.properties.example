@@ -1,0 +1,5 @@
+# Chép thành local.properties (không commit) và điền giá trị thật
+sdk.dir=/path/to/Android/sdk
+# Địa chỉ nginx của backend: 10.0.2.2 trên emulator, IP máy tính trên điện thoại thật cùng mạng
+API_BASE_URL=http://10.0.2.2:8080
+VIETMAP_API_KEY=
