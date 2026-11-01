@@ -41,7 +41,7 @@ export default function SignTypes() {
       <button onClick={() => setEditing('new')}>Thêm loại biển</button>
       {editing && (
         <form className="panel" onSubmit={save} key={t?.code ?? 'new'}>
-          <label>Mã <input name="code" defaultValue={t?.code} required disabled={!!t} /></label>
+          <label>Mã <input name="code" defaultValue={t?.code} required readOnly={!!t} /></label>
           <label>
             Nhóm
             <select name="group" defaultValue={t?.group ?? 'PROHIBITORY'}>
