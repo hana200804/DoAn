@@ -78,6 +78,8 @@ Content-Type: application/json
 }
 ```
 
+Sai mật khẩu quá 10 lần trong 15 phút từ cùng một IP thì trả `429`. Đếm theo email + IP (nginx gửi `X-Real-IP`), nên người ngoài nhập sai liên tục không khoá được chủ tài khoản.
+
 ## 4. map-service
 
 | Method | Đường dẫn | Quyền | Mô tả | FR |
@@ -152,6 +154,8 @@ Content-Type: application/json
 ```
 
 Gửi lại cùng `Idempotency-Key` trả về đúng `batchId` cũ, không tạo bản ghi mới.
+
+Quan sát dương có mã biển không có trong danh mục hoặc đang ngừng dùng bị bỏ riêng (không có trong `uploads`), các quan sát còn lại của lô vẫn được nhận. Như vậy một mã bị ngừng dùng không làm mất cả lô.
 
 ### Cụm biển trong vùng
 
