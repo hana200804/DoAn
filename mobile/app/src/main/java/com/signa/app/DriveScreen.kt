@@ -2,6 +2,7 @@ package com.signa.app
 
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
@@ -45,11 +46,10 @@ import com.signa.core.WarningEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import java.util.concurrent.Executors
 
 /** Màn hình lái xe (FR-01 → FR-05): camera, khung biển, tốc độ, giới hạn, cảnh báo giọng nói. */
 @Composable
-fun DriveScreen() {
+fun DriveScreen(hasLocation: Boolean) {
     val context = LocalContext.current
     val app = context.app
     val models = app.models
@@ -65,32 +65,37 @@ fun DriveScreen() {
     var tracks by remember { mutableStateOf(emptyList<TrackView>()) }
     var frameSize by remember { mutableStateOf(Size(1f, 1f)) }
     var banner by remember { mutableStateOf<String?>(null) }
-    val pipeline = remember { Pipeline(models, engine) { obs, crop -> app.queue.add(obs, crop) } }
-    val executor = remember { Executors.newSingleThreadExecutor() }
+    val pipeline = remember { Pipeline(models, engine) { obs, crop, sub -> app.queue.add(obs, crop, sub) } }
 
     DisposableEffect(Unit) {
         val window = (context as ComponentActivity).window
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        location.start { fix = it }
+        if (hasLocation) location.start { fix = it }
         onDispose {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             location.stop()
             speaker.shutdown()
-            executor.shutdown()
         }
     }
 
-    // Nhịp cảnh báo: tốc độ, biển tải trước phía trước, đọc câu kế tiếp
+    // Tải biển quanh vị trí tách khỏi nhịp cảnh báo để mạng chậm không làm trễ giọng nói
+    LaunchedEffect(Unit) {
+        while (true) {
+            fix?.let { f -> withContext(Dispatchers.IO) { runCatching { app.signs.refreshAround(f.lat, f.lng, System.currentTimeMillis()) } } }
+            delay(5_000)
+        }
+    }
+
+    // Nhịp cảnh báo: tốc độ, biển tải trước phía trước, đọc câu kế tiếp; chỉ đọc dữ liệu đã có
     LaunchedEffect(Unit) {
         while (true) {
             val now = System.currentTimeMillis()
             fix?.let { f ->
-                withContext(Dispatchers.IO) { runCatching { app.signs.refreshAround(f.lat, f.lng, now) } }
+                val ahead = app.signs.ahead(f.lat, f.lng, f.bearing)
                 synchronized(engine) {
                     engine.onSpeed(f.speedKmh, now)
-                    app.signs.ahead(f.lat, f.lng, f.bearing).forEach { (s, d) ->
-                        engine.onMapSign(s.id, s.code, s.conditions, false, d, f.speedKmh, now)
-                    }
+                    ahead.forEach { (s, d) -> engine.onMapSign(s.id, s.code, s.conditions, false, d, f.speedKmh, now) }
+                    engine.keepOnly("map:", ahead.mapTo(HashSet()) { "map:${it.first.id}" })
                 }
             }
             synchronized(engine) { engine.nextSpeech(now) }?.let {
@@ -102,7 +107,7 @@ fun DriveScreen() {
     }
 
     Box(Modifier.fillMaxSize()) {
-        CameraPreview(executor) { frame ->
+        CameraPreview(app.inference) { frame ->
             frameSize = Size(frame.width.toFloat(), frame.height.toFloat())
             tracks = pipeline.process(frame, fix, System.currentTimeMillis())
         }
@@ -119,6 +124,14 @@ fun DriveScreen() {
 @Composable
 private fun CameraPreview(executor: java.util.concurrent.Executor, onFrame: (Bitmap) -> Unit) {
     val owner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        // Màn hình khác trong cùng Activity không được giữ camera
+        onDispose {
+            val future = ProcessCameraProvider.getInstance(context)
+            future.addListener({ future.get().unbindAll() }, ContextCompat.getMainExecutor(context))
+        }
+    }
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { ctx ->
@@ -136,10 +149,12 @@ private fun CameraPreview(executor: java.util.concurrent.Executor, onFrame: (Bit
                         image.use {
                             val bitmap = it.toBitmap()
                             val rotation = it.imageInfo.rotationDegrees
-                            onFrame(
-                                if (rotation == 0) bitmap
-                                else Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(rotation.toFloat()) }, true),
-                            )
+                            runCatching {
+                                onFrame(
+                                    if (rotation == 0) bitmap
+                                    else Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(rotation.toFloat()) }, true),
+                                )
+                            }.onFailure { e -> Log.w(SignaApp.TAG, "Xử lý khung hình lỗi", e) }
                         }
                     }
                     provider.unbindAll()

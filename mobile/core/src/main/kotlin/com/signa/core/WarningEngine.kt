@@ -95,6 +95,11 @@ class WarningEngine(
         }
     }
 
+    /** Quên các biển có [prefix] không còn trong [current] (đã đi qua) để lượt đi sau được cảnh báo lại. */
+    fun keepOnly(prefix: String, current: Set<String>) {
+        announcedKeys.removeIf { it.startsWith(prefix) && it !in current }
+    }
+
     fun onSpeed(kmh: Float, nowMs: Long) {
         val limit = limitKmh
         if (limit == null || kmh <= limit + SPEED_TOLERANCE) {

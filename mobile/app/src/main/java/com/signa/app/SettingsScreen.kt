@@ -100,6 +100,7 @@ private fun Account(onLogout: () -> Unit) {
         scope.launch {
             call { app.api.post("/auth/logout") }
             app.prefs.session = null
+            app.prefs.userId = null
             onLogout()
         }
     }) { Text("Đăng xuất") }
@@ -120,6 +121,7 @@ private fun AuthForm(onLogin: () -> Unit) {
         message = call {
             val res = JSONObject(app.api.post("/auth/login", JSONObject().put("email", email).put("password", password)))
             app.prefs.session = res.getString("sessionId")
+            app.prefs.userId = res.getJSONObject("user").getString("id")
             app.prefs.displayName = res.getJSONObject("user").getString("displayName")
         }
         if (message == null) onLogin()

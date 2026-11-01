@@ -40,12 +40,18 @@ private enum class Tab(val label: String) {
 @Composable
 private fun SignaRoot() {
     var tab by rememberSaveable { mutableStateOf(Tab.DRIVE) }
-    var granted by remember { mutableStateOf(false) }
+    var camera by remember { mutableStateOf(false) }
+    var location by remember { mutableStateOf(false) }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        granted = result.values.all { it }
+        camera = result[Manifest.permission.CAMERA] == true
+        // Tốc độ và vị trí biển cần GPS, vị trí gần đúng không đủ
+        location = result[Manifest.permission.ACCESS_FINE_LOCATION] == true
     }
     LaunchedEffect(Unit) {
-        permissions.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION))
+        // Android 12+ bỏ qua yêu cầu FINE nếu không xin kèm COARSE
+        permissions.launch(
+            arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+        )
     }
 
     Scaffold(
@@ -64,7 +70,7 @@ private fun SignaRoot() {
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                Tab.DRIVE -> if (granted) DriveScreen() else Text("Cần quyền camera và vị trí để nhận diện biển báo.", Modifier.padding(24.dp))
+                Tab.DRIVE -> if (camera) DriveScreen(location) else Text("Cần quyền camera để nhận diện biển báo.", Modifier.padding(24.dp))
                 Tab.MAP -> MapScreen()
                 Tab.SETTINGS -> SettingsScreen()
             }

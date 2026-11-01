@@ -62,4 +62,21 @@ class TrackerTest {
         assertEquals("P.123a", track.label())
         assertFalse(track.needsClassification())
     }
+
+    @Test
+    fun `uncertain classification is rejected instead of inflating the vote`() {
+        val track = Tracker().update(listOf(det())).active.single()
+        val rest = (1..19).associate { "X.$it" to 0.6f / 19 }
+        track.vote(rest + ("P.123a" to 0.4f))
+        assertNull(track.label())
+        assertEquals(0.0, track.share())
+    }
+
+    @Test
+    fun `sub-sign directly below is attached, one beside or far below is not`() {
+        val main = Box(100f, 100f, 200f, 200f)
+        assertTrue(main.holdsSubSign(Box(110f, 205f, 190f, 245f)))
+        assertFalse(main.holdsSubSign(Box(220f, 205f, 300f, 245f)))
+        assertFalse(main.holdsSubSign(Box(110f, 300f, 190f, 340f)))
+    }
 }

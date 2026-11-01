@@ -11,6 +11,11 @@ class Prefs(context: Context) {
         get() = p.getString("session", null)
         set(v) = p.edit().putString("session", v).apply()
 
+    /** Chủ hàng đợi quan sát; quan sát của người khác trên cùng máy không bị gửi bằng phiên này. */
+    var userId: String?
+        get() = p.getString("userId", null)
+        set(v) = p.edit().putString("userId", v).apply()
+
     var displayName: String?
         get() = p.getString("displayName", null)
         set(v) = p.edit().putString("displayName", v).apply()

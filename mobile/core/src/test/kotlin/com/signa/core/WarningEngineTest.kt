@@ -14,7 +14,8 @@ class WarningEngineTest {
         SignInfo("W.225", SignGroup.WARNING, "Trẻ em"),
     ).associateBy { it.code }
 
-    private fun engine(time: LocalTime = LocalTime.NOON) = WarningEngine(catalog, VehicleType.CAR) { time }
+    private fun engine(time: LocalTime = LocalTime.NOON, catalog: Map<String, SignInfo> = this.catalog) =
+        WarningEngine(catalog, VehicleType.CAR) { time }
 
     /** Đọc hết câu trong hàng đợi, mỗi câu cách nhau 4 giây. */
     private fun WarningEngine.drain(fromMs: Long): List<String> =
@@ -87,6 +88,25 @@ class WarningEngineTest {
         val e = engine()
         e.onMapSign("c1", "W.225", null, false, distanceAheadM = 300.0, speedKmh = 50f, nowMs = 0)
         assertEquals(emptyList(), e.drain(0))
+    }
+
+    @Test
+    fun `map sign warns again on the next pass after it was left behind`() {
+        val e = engine()
+        e.onMapSign("c1", "W.225", null, false, distanceAheadM = 40.0, speedKmh = 30f, nowMs = 0)
+        assertEquals(listOf("Chú ý, trẻ em"), e.drain(0))
+
+        e.keepOnly("map:", emptySet())
+        e.onMapSign("c1", "W.225", null, false, distanceAheadM = 40.0, speedKmh = 30f, nowMs = 60_000)
+        assertEquals(listOf("Chú ý, trẻ em"), e.drain(60_000))
+    }
+
+    @Test
+    fun `end of speed limit clears the current limit`() {
+        val e = engine(catalog = catalog + ("DP.134" to SignInfo("DP.134", SignGroup.PROHIBITORY, "Hết tốc độ tối đa cho phép", endsSpeedLimit = true)))
+            .withLimit50()
+        e.onSign("track:2", "DP.134", null, false, 1_000)
+        assertNull(e.limitKmh)
     }
 
     @Test

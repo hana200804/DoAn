@@ -25,15 +25,17 @@ data class TrackView(val box: Box, val code: String?, val confirmed: Boolean)
 class Pipeline(
     private val models: ModelBundle,
     private val engine: WarningEngine,
-    private val onObservation: (JSONObject, Bitmap) -> Unit,
+    private val onObservation: (obs: JSONObject, crop: Bitmap, subCrop: Bitmap?) -> Unit,
 ) {
     private val tracker = Tracker()
     private val samples = HashMap<Int, MutableList<Geo.Sample>>()
     private val bestCrop = HashMap<Int, Pair<Float, Bitmap>>()
-    private val announced = HashSet<Int>()
+    private val subCrop = HashMap<Int, Pair<Float, Bitmap>>()
+    private val auxGroup = models.groups.indexOf("auxiliary")
 
     fun process(frame: Bitmap, fix: Fix?, nowMs: Long): List<TrackView> {
         val result = tracker.update(models.detector.detect(frame))
+        val subs = result.active.filter { it.group == auxGroup }
         var classified = 0
         for (t in result.active) {
             if (classified < MAX_CROPS_PER_FRAME && t.needsClassification()) {
@@ -45,16 +47,23 @@ class Pipeline(
             if (fix != null) {
                 samples.getOrPut(t.id) { mutableListOf() } += Geo.Sample(fix.lat, fix.lng, fix.bearing, t.box, frame.width, focalPx(frame.width))
             }
+            if (t.group != auxGroup) {
+                subs.firstOrNull { t.box.holdsSubSign(it.box) }?.let { s ->
+                    if (s.box.area > (subCrop[t.id]?.first ?: 0f)) crop(frame, s.box)?.let { subCrop[t.id] = s.box.area to it }
+                }
+            }
             val code = t.label()
-            if (t.confirmed && code != null && announced.add(t.id)) {
-                synchronized(engine) { engine.onSign("track:${t.id}", code, null, false, nowMs) }
+            if (t.confirmed && code != null) {
+                // WarningEngine tự chống đọc lặp theo key
+                synchronized(engine) { engine.onSign("track:${t.id}", code, null, t.id in subCrop, nowMs) }
             }
         }
         result.ended.forEach { emit(it) }
         val alive = result.active.map { it.id }.toSet()
         samples.keys.retainAll(alive)
         bestCrop.keys.retainAll(alive)
-        announced.retainAll(alive)
+        subCrop.keys.retainAll(alive)
+        synchronized(engine) { engine.keepOnly("track:", alive.mapTo(HashSet()) { "track:$it" }) }
         return result.active.map { TrackView(it.box, it.label(), it.confirmed) }
     }
 
@@ -76,9 +85,9 @@ class Pipeline(
             .put("headingDeg", s.last().headingDeg.toInt().mod(360))
             .put("distanceM", dist.coerceIn(0.0, 500.0))
             .put("frames", t.frames)
-            .put("hasSubSign", false)
+            .put("hasSubSign", t.id in subCrop)
             .put("observedAt", Instant.now().toString())
-        onObservation(obs, crop)
+        onObservation(obs, crop, subCrop[t.id]?.second)
     }
 
     private fun crop(frame: Bitmap, box: Box): Bitmap? {

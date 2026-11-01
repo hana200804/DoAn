@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.util.Log
 import com.signa.core.Box
 import com.signa.core.Detection
 import com.signa.core.SignGroup
@@ -71,15 +72,19 @@ class ModelBundle(
                 FileInputStream(fd.fileDescriptor).channel.map(FileChannel.MapMode.READ_ONLY, fd.startOffset, fd.declaredLength)
             }
 
+        /** GPU delegate phải được tạo và chạy trên cùng một luồng: gọi trên [SignaApp.inference]. */
         internal fun interpreter(model: ByteBuffer): Interpreter {
-            val options = Interpreter.Options()
             val compat = CompatibilityList()
             if (compat.isDelegateSupportedOnThisDevice) {
-                options.addDelegate(GpuDelegate(compat.bestOptionsForThisDevice))
-            } else {
-                options.setNumThreads(4) // dự phòng CPU (XNNPACK)
+                val gpu = GpuDelegate(compat.bestOptionsForThisDevice)
+                try {
+                    return Interpreter(model, Interpreter.Options().addDelegate(gpu))
+                } catch (e: Exception) {
+                    gpu.close()
+                    Log.w(SignaApp.TAG, "GPU delegate lỗi, chuyển sang CPU", e)
+                }
             }
-            return Interpreter(model, options)
+            return Interpreter(model, Interpreter.Options().setNumThreads(4)) // CPU (XNNPACK)
         }
     }
 }
@@ -142,12 +147,12 @@ class Classifier(model: ByteBuffer, private val inputSize: Int, private val code
     private val interpreter = ModelBundle.interpreter(model)
 
     // shortcut: kéo giãn ảnh cắt về hình vuông thay vì cắt giữa như lúc huấn luyện; đo lại nếu độ chính xác trên máy thấp hơn tập test
-    fun classify(crop: Bitmap, top: Int = 5): Map<String, Float> {
+    /** Toàn bộ phân bố xác suất; cắt top-N trước khi bỏ phiếu sẽ thổi phồng tỉ lệ phiếu. */
+    fun classify(crop: Bitmap): Map<String, Float> {
         val probs = run(interpreter, Bitmap.createScaledBitmap(crop, inputSize, inputSize, true))
         val scaled = probs.map { it.toDouble().coerceAtLeast(1e-12).pow(1 / temperature) }
         val sum = scaled.sum()
-        return scaled.indices.sortedByDescending { scaled[it] }.take(top)
-            .associate { codes[it] to (scaled[it] / sum).toFloat() }
+        return scaled.indices.associate { codes[it] to (scaled[it] / sum).toFloat() }
     }
 }
 

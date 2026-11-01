@@ -7,6 +7,14 @@ data class Box(val left: Float, val top: Float, val right: Float, val bottom: Fl
     val area get() = width * height
     val centerX get() = (left + right) / 2
 
+    /** [sub] là biển phụ của biển chính này: nằm dưới, chồng ngang ≥ 50%, cách ≤ 0,5 chiều cao (docs/04-thiet-ke-ai.md §6). */
+    fun holdsSubSign(sub: Box): Boolean {
+        val overlap = minOf(right, sub.right) - maxOf(left, sub.left)
+        return sub.top > top + height / 2 &&
+            sub.top - bottom <= 0.5f * height &&
+            overlap >= 0.5f * minOf(width, sub.width)
+    }
+
     fun iou(other: Box): Float {
         val w = minOf(right, other.right) - maxOf(left, other.left)
         val h = minOf(bottom, other.bottom) - maxOf(top, other.top)
@@ -32,8 +40,12 @@ class Track internal constructor(val id: Int, box: Box, val group: Int) {
     private var classifiedArea = 0f
     private val votes = HashMap<String, Double>()
 
-    /** Cộng phiếu của một lần phân loại, trọng số theo diện tích hộp (biển gần rõ hơn). */
+    /**
+     * Cộng phiếu của một lần phân loại, trọng số theo diện tích hộp (biển gần rõ hơn). [probs] là
+     * toàn bộ phân bố; lần phân loại có xác suất cao nhất dưới [Tracker.MIN_CLASS_PROB] bị bỏ.
+     */
     fun vote(probs: Map<String, Float>) {
+        if ((probs.values.maxOrNull() ?: 0f) < Tracker.MIN_CLASS_PROB) return
         val weight = box.area.toDouble()
         probs.forEach { (code, p) -> votes.merge(code, p * weight, Double::plus) }
         classifiedArea = box.area
@@ -118,5 +130,6 @@ class Tracker(
 
     companion object {
         const val VOTE_SHARE = 0.6
+        const val MIN_CLASS_PROB = 0.5f
     }
 }
