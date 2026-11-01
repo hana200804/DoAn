@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { api, post, Report } from '../api'
-import { useLoad } from '../useLoad'
+import { useAction, useLoad } from '../useLoad'
 
 const REASONS: Record<string, string> = {
   NOT_EXIST: 'Không tồn tại',
@@ -13,10 +13,8 @@ const REASONS: Record<string, string> = {
 export default function Reports() {
   const { data, error, reload } = useLoad(useCallback(() => api<Report[]>('/admin/reports'), []))
 
-  const resolve = async (id: string, body: object) => {
-    await post(`/admin/reports/${id}/resolve`, body)
-    reload()
-  }
+  const { busy, actionError, run } = useAction(reload)
+  const resolve = (id: string, body: object) => run(() => post(`/admin/reports/${id}/resolve`, body))
 
   const accept = (r: Report) => {
     const code = prompt('Nhập mã biển đúng để sửa, hoặc để trống để loại cụm biển:')
@@ -36,6 +34,8 @@ export default function Reports() {
   if (data.length === 0) return <p>Không có báo cáo nào đang chờ.</p>
 
   return (
+    <>
+    {actionError && <p className="error">{actionError}</p>}
     <table>
       <thead>
         <tr>
@@ -54,12 +54,13 @@ export default function Reports() {
             <td>{REASONS[r.reason] ?? r.reason}</td>
             <td>{r.note}</td>
             <td>
-              <button onClick={() => accept(r)}>Chấp nhận</button>{' '}
-              <button className="danger" onClick={() => reject(r)}>Từ chối</button>
+              <button disabled={busy} onClick={() => accept(r)}>Chấp nhận</button>{' '}
+              <button className="danger" disabled={busy} onClick={() => reject(r)}>Từ chối</button>
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+    </>
   )
 }
