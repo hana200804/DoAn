@@ -62,7 +62,8 @@ class ObservationQueue(
         val key = batch.name.removePrefix("batch-")
         // Quan sát thiếu file không thể gửi; bỏ lại để xoá cùng lô thay vì kẹt hàng đợi
         val items = observations(batch).sortedBy { it.name }.mapNotNull { dir ->
-            val obs = File(dir, OBS).takeIf { it.exists() }?.let { JSONObject(it.readText()) }
+            // File hỏng (máy mất điện ngay sau khi ghi) bị bỏ, xoá cùng lô
+            val obs = File(dir, OBS).takeIf { it.exists() }?.let { runCatching { JSONObject(it.readText()) }.getOrNull() }
             obs?.takeIf { it.getString("kind") == "NEGATIVE" || File(dir, CROP).exists() }
         }
         if (items.isEmpty()) {

@@ -103,7 +103,7 @@ fun DriveScreen(hasLocation: Boolean) {
                     // Quên theo khoảng cách, không theo hướng: xe đứng yên thì GPS không có hướng
                     engine.keepOnly("map:", near.keys.mapTo(HashSet()) { "map:$it" })
                 }
-                val missed = synchronized(passes) { passes.update(near, now) }
+                val missed = synchronized(passes) { passes.update(near, ahead.mapTo(HashSet()) { it.first.id }, now) }
                 if (missed.isNotEmpty()) {
                     withContext(Dispatchers.IO) { missed.forEach { app.queue.add(Pipeline.negativeObservation(it, f), null, null) } }
                 }

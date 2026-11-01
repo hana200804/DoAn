@@ -1,9 +1,10 @@
 package com.signa.core
 
 /**
- * Biển trên bản đồ mà xe đã đi qua nhưng camera không thấy (docs/04-thiet-ke-ai.md §8): xe đến gần
- * trong [nearM] rồi ra xa quá [passedM], và camera không xác nhận biển cùng mã trong [seenWindowMs].
- * Dựa vào khoảng cách chứ không dựa vào hướng, vì xe đứng yên thì GPS không có hướng.
+ * Biển trên bản đồ mà xe đã đi qua nhưng camera không thấy (docs/04-thiet-ke-ai.md §8): biển cùng
+ * chiều, ở phía trước xe, được đến gần trong [nearM] rồi ra xa quá [passedM], và camera không xác
+ * nhận biển cùng mã trong [seenWindowMs]. "Đã qua" xét theo khoảng cách chứ không theo hướng, vì xe
+ * đứng yên thì GPS không có hướng.
  */
 class PassMonitor(
     private val nearM: Double = 20.0,
@@ -17,9 +18,12 @@ class PassMonitor(
         lastSeen[code] = nowMs
     }
 
-    /** [around]: clusterId → (mã biển, khoảng cách m) của biển quanh xe. Trả các cụm cần gửi quan sát âm. */
-    fun update(around: Map<String, Pair<String, Double>>, nowMs: Long): List<String> {
-        around.forEach { (id, v) -> if (v.second <= nearM) approached[id] = v.first }
+    /**
+     * [around]: clusterId → (mã biển, khoảng cách m) của biển quanh xe; [ahead]: các cụm cùng chiều ở
+     * phía trước, chỉ những biển này camera mới nhìn được. Trả các cụm cần gửi quan sát âm.
+     */
+    fun update(around: Map<String, Pair<String, Double>>, ahead: Set<String>, nowMs: Long): List<String> {
+        around.forEach { (id, v) -> if (id in ahead && v.second <= nearM) approached[id] = v.first }
         val missed = ArrayList<String>()
         approached.entries.removeIf { (id, code) ->
             val d = around[id]?.second

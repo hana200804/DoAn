@@ -65,6 +65,8 @@ class ObservationQueueTest {
         File(user, "x.tmp").mkdirs() // app bị dừng giữa lúc ghi
         val broken = File(user, "batch-broken/o1").apply { mkdirs() }
         File(broken, "obs.json").writeText(observation().toString()) // thiếu crop.jpg
+        File(user, "batch-broken/o2").mkdirs()
+        File(user, "batch-broken/o2/obs.json").writeText("") // ghi dở khi mất điện
 
         val queue = ObservationQueue(dir, api, prefs, context)
         assertFalse(File(user, "x.tmp").exists())
