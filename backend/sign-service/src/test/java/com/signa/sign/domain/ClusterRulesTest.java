@@ -59,6 +59,9 @@ class ClusterRulesTest {
 
     assertThat(a.status()).isEqualTo(ClusterStatus.CONFLICT);
     assertThat(a.topCode()).isEqualTo("P.123a");
+
+    var moreA = assess(Map.of("P.123a", 9.0, "P.123b", 3.5), 0, 5, 0, ClusterStatus.CONFLICT);
+    assertThat(moreA.status()).isEqualTo(ClusterStatus.CONFLICT);
   }
 
   @Test

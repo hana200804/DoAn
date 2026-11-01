@@ -1,9 +1,12 @@
 package com.signa.sign.app;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
+import com.signa.common.error.ApiException;
 import com.signa.common.geo.LatLng;
 import com.signa.sign.api.SignDtos.CodeProb;
 import com.signa.sign.api.SignDtos.CreateBatchRequest;
@@ -38,6 +41,7 @@ class ObservationFlowIT {
 
   @Autowired ObservationService observations;
   @Autowired SignRepository repo;
+  @Autowired ReviewService reviews;
 
   private final double lat = 21.0 + Math.random() * 0.1;
   private final double lng = 105.8;
@@ -73,6 +77,43 @@ class ObservationFlowIT {
     assertThat(clusters.get(0).status()).isEqualTo(ClusterStatus.VERIFIED);
     assertThat(clusters.get(0).distinctUsers()).isEqualTo(4);
     assertThat(clusters.get(0).signCode()).isEqualTo("P.123a");
+  }
+
+  @Test
+  void rejectedClusterDoesNotAttractNewObservations() {
+    String first = submit("user-r1");
+    repo.setStatus(first, ClusterStatus.REJECTED, "P.123a", false);
+
+    assertThat(submit("user-r2")).isNotEqualTo(first);
+  }
+
+  @Test
+  void resolvingConflictTwiceCountsReputationOnce() {
+    String cluster = submit("user-c1");
+    repo.setStatus(cluster, ClusterStatus.CONFLICT, "P.123a", false);
+
+    reviews.resolveConflict(cluster, "admin", "P.123a", false, "đúng");
+    assertThatThrownBy(() -> reviews.resolveConflict(cluster, "admin", "P.123a", false, "đúng"))
+        .isInstanceOf(ApiException.class);
+    assertThat(repo.reputation("user-c1")).isEqualTo(1.05);
+  }
+
+  @Test
+  void storageOutageFailsCompleteSoItCanBeRetried() {
+    var res = observations.createBatch("user-s", UUID.randomUUID().toString(), batch(0.95));
+    when(storage.exists(anyString())).thenThrow(ApiException.upstream("down"));
+    assertThatThrownBy(() -> observations.complete("user-s", res.batchId()))
+        .isInstanceOf(ApiException.class);
+
+    doReturn(true).when(storage).exists(anyString());
+    observations.complete("user-s", res.batchId());
+    assertThat(repo.observations(res.batchId()).get(0).cropKey()).isNotNull();
+  }
+
+  private String submit(String user) {
+    var res = observations.createBatch(user, UUID.randomUUID().toString(), batch(0.95));
+    observations.complete(user, res.batchId());
+    return repo.observations(res.batchId()).get(0).clusterId();
   }
 
   private CreateBatchRequest batch(double p) {

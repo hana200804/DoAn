@@ -1,5 +1,6 @@
 package com.signa.sign.store;
 
+import com.signa.common.error.ApiException;
 import io.minio.BucketExistsArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
@@ -26,6 +27,7 @@ public class CropStorage {
   private final MinioClient internal;
   private final MinioClient presigner;
   private final String bucket;
+  private volatile boolean bucketReady;
 
   public CropStorage(
       @Value("${signa.minio.endpoint}") String endpoint,
@@ -45,18 +47,26 @@ public class CropStorage {
     this.bucket = bucket;
   }
 
+  /** Thử lúc khởi động; nếu S3 chưa sẵn sàng thì thử lại ở lần cấp URL tải lên kế tiếp. */
   @EventListener(ApplicationReadyEvent.class)
   public void ensureBucket() {
     try {
       if (!internal.bucketExists(BucketExistsArgs.builder().bucket(bucket).build())) {
         internal.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
       }
+      bucketReady = true;
     } catch (Exception e) {
       log.warn("Chưa tạo được bucket {}: {}", bucket, e.getMessage());
     }
   }
 
   public String uploadUrl(String key) {
+    if (!bucketReady) {
+      ensureBucket();
+      if (!bucketReady) {
+        throw ApiException.upstream("Kho ảnh chưa sẵn sàng");
+      }
+    }
     return presign(Method.PUT, key, UPLOAD_URL_MINUTES);
   }
 
@@ -69,11 +79,19 @@ public class CropStorage {
       internal.statObject(StatObjectArgs.builder().bucket(bucket).object(key).build());
       return true;
     } catch (ErrorResponseException e) {
-      return false;
+      if ("NoSuchKey".equals(e.errorResponse().code())) {
+        return false;
+      }
+      throw storageDown(key, e);
     } catch (Exception e) {
-      log.warn("Không kiểm tra được ảnh {}: {}", key, e.getMessage());
-      return false;
+      throw storageDown(key, e);
     }
+  }
+
+  // Lỗi hạ tầng phải làm request thất bại (rollback) để app gửi lại, không coi là ảnh không có
+  private static ApiException storageDown(String key, Exception e) {
+    log.warn("Không kiểm tra được ảnh {}: {}", key, e.getMessage());
+    return ApiException.upstream("Kho ảnh tạm thời không truy cập được");
   }
 
   private String presign(Method method, String key, int minutes) {

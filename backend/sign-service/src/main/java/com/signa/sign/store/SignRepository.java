@@ -132,6 +132,16 @@ public class SignRepository {
         .findFirst();
   }
 
+  public Optional<Cluster> clusterForUpdate(String id) {
+    return jdbc
+        .query(
+            CLUSTER_SELECT + " WHERE c.id = :id FOR UPDATE",
+            Map.of("id", id),
+            SignRepository::cluster)
+        .stream()
+        .findFirst();
+  }
+
   public List<Cluster> clustersByStatus(ClusterStatus status, int limit) {
     return jdbc.query(
         CLUSTER_SELECT + " WHERE c.status = :status ORDER BY c.updated_at LIMIT :limit",
@@ -148,6 +158,7 @@ public class SignRepository {
         SELECT c.id, t.group_code, c.lat, c.lng, c.heading_deg FROM sign_clusters c
         JOIN sign_types t ON t.code = c.sign_code
         WHERE c.lat BETWEEN :minLat AND :maxLat AND c.lng BETWEEN :minLng AND :maxLng
+          AND c.status <> 'REJECTED'
         """,
         new MapSqlParameterSource()
             .addValue("minLat", lat - dLat)
@@ -598,10 +609,12 @@ public class SignRepository {
         SignRepository::report);
   }
 
-  public Optional<Report> report(String id) {
+  public Optional<Report> reportForUpdate(String id) {
     return jdbc
         .query(
-            "SELECT * FROM sign_reports WHERE id = :id", Map.of("id", id), SignRepository::report)
+            "SELECT * FROM sign_reports WHERE id = :id FOR UPDATE",
+            Map.of("id", id),
+            SignRepository::report)
         .stream()
         .findFirst();
   }

@@ -3,8 +3,8 @@ package com.signa.auth.config;
 import com.signa.auth.otp.LoggingOtpSender;
 import com.signa.auth.otp.MailOtpSender;
 import com.signa.auth.otp.OtpSender;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -20,7 +20,7 @@ public class AuthConfig {
   }
 
   @Bean
-  @ConditionalOnProperty(name = "spring.mail.host")
+  @ConditionalOnExpression("!'${spring.mail.host:}'.isBlank()")
   OtpSender mailOtpSender(JavaMailSender mailSender) {
     return new MailOtpSender(mailSender);
   }

@@ -81,6 +81,10 @@ public final class ClusterRules {
     if (e.lockedCode() != null) {
       return ClusterStatus.VERIFIED;
     }
+    // Chỉ quản trị viên gỡ được mâu thuẫn (ReviewService chốt mã hoặc loại cụm)
+    if (e.current() == ClusterStatus.CONFLICT) {
+      return ClusterStatus.CONFLICT;
+    }
     if (e.distinctUsers() >= MIN_DISTINCT_USERS
         && total > 0
         && secondWeight >= CONFLICT_SHARE * total) {

@@ -6,8 +6,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,6 +20,22 @@ import org.springframework.stereotype.Component;
 public class OtpStore {
 
   private static final SecureRandom RANDOM = new SecureRandom();
+
+  private static final RedisScript<Long> VERIFY =
+      RedisScript.of(
+          """
+          local code = redis.call('HGET', KEYS[1], 'code')
+          if not code then return 0 end
+          if code == ARGV[1] then
+            redis.call('DEL', KEYS[1])
+            return 1
+          end
+          if redis.call('HINCRBY', KEYS[1], 'attempts', 1) >= tonumber(ARGV[2]) then
+            redis.call('DEL', KEYS[1])
+          end
+          return 0
+          """,
+          Long.class);
 
   private final StringRedisTemplate redis;
   private final AuthProperties.Otp config;
@@ -37,24 +55,12 @@ public class OtpStore {
     return otp;
   }
 
-  /** Kiểm tra OTP; trả true và xoá OTP nếu đúng. */
+  /** Kiểm tra OTP; trả true và xoá OTP nếu đúng. Chạy nguyên tử để một mã chỉ dùng được một lần. */
   public boolean verify(String email, String otp) {
-    String key = key(email);
-    Object stored = redis.opsForHash().get(key, "code");
-    if (stored == null) {
-      return false;
-    }
-    if (MessageDigest.isEqual(
-        stored.toString().getBytes(StandardCharsets.UTF_8),
-        hash(email, otp).getBytes(StandardCharsets.UTF_8))) {
-      redis.delete(key);
-      return true;
-    }
-    Long attempts = redis.opsForHash().increment(key, "attempts", 1);
-    if (attempts != null && attempts >= config.maxAttempts()) {
-      redis.delete(key);
-    }
-    return false;
+    Long ok =
+        redis.execute(
+            VERIFY, List.of(key(email)), hash(email, otp), String.valueOf(config.maxAttempts()));
+    return ok != null && ok == 1;
   }
 
   private static String key(String email) {

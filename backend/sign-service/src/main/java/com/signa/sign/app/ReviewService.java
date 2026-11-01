@@ -33,7 +33,12 @@ public class ReviewService {
   public void resolveConflict(
       String clusterId, String adminId, String signCode, boolean reject, String reason) {
     Cluster cluster =
-        repo.cluster(clusterId).orElseThrow(() -> ApiException.notFound("Không tìm thấy biển báo"));
+        repo.clusterForUpdate(clusterId)
+            .orElseThrow(() -> ApiException.notFound("Không tìm thấy biển báo"));
+    // Khoá dòng rồi mới kiểm tra để gửi lại hoặc bấm hai lần không cộng uy tín lần nữa
+    if (cluster.status() != ClusterStatus.CONFLICT) {
+      throw ApiException.conflict("Biển báo không còn ở trạng thái mâu thuẫn");
+    }
     if (reject) {
       rejectCluster(cluster, adminId, reason);
     } else {
@@ -50,7 +55,7 @@ public class ReviewService {
       String signCode,
       String note) {
     Report report =
-        repo.report(reportId)
+        repo.reportForUpdate(reportId)
             .filter(r -> "PENDING".equals(r.status()))
             .orElseThrow(() -> ApiException.notFound("Không tìm thấy báo cáo đang chờ"));
     if (!accept) {
@@ -60,7 +65,7 @@ public class ReviewService {
       repo.resolveReport(reportId, "REJECTED", note, adminId);
       return;
     }
-    Cluster cluster = repo.cluster(report.clusterId()).orElseThrow();
+    Cluster cluster = repo.clusterForUpdate(report.clusterId()).orElseThrow();
     if ("CHANGE_CODE".equals(action)) {
       setCode(cluster, adminId, signCode, note);
     } else if ("REJECT_CLUSTER".equals(action)) {
