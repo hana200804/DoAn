@@ -1,0 +1,38 @@
+# Danh mục nhãn v1. Mã và tên cần đối chiếu nguyên văn QCVN 41:2024/BGTVT trước khi gán nhãn (issue #11).
+# Thêm/sửa mã ở đây rồi chạy `signa-ai labels-sql` để sinh lại dữ liệu cho bảng sign_types.
+version: 1
+
+groups: [prohibitory, mandatory, warning, auxiliary, other]
+
+# Chiều cao thật (m) của mặt biển theo nhóm, dùng để ước lượng khoảng cách (Thiết kế AI §7). Cần đối chiếu QCVN.
+sign_height_m:
+  prohibitory: 0.70
+  mandatory: 0.70
+  warning: 0.70
+  auxiliary: 0.35
+  other: 0.70
+
+# Chỉ thêm mã mới ở cuối: thứ tự là số lớp trong file nhãn đã gán
+codes:
+  - {code: P.102, group: prohibitory, name: Cấm đi ngược chiều}
+  - {code: P.103a, group: prohibitory, name: Cấm xe ô tô}
+  - {code: P.123a, group: prohibitory, name: Cấm rẽ trái}
+  - {code: P.123b, group: prohibitory, name: Cấm rẽ phải}
+  - {code: P.124a, group: prohibitory, name: Cấm quay đầu xe}
+  - {code: P.130, group: prohibitory, name: Cấm dừng xe và đỗ xe}
+  - {code: P.131a, group: prohibitory, name: Cấm đỗ xe}
+  - {code: P.127_40, group: prohibitory, name: Tốc độ tối đa cho phép 40 km/h, speed_kmh: 40}
+  - {code: P.127_50, group: prohibitory, name: Tốc độ tối đa cho phép 50 km/h, speed_kmh: 50}
+  - {code: P.127_60, group: prohibitory, name: Tốc độ tối đa cho phép 60 km/h, speed_kmh: 60}
+  - {code: P.127_70, group: prohibitory, name: Tốc độ tối đa cho phép 70 km/h, speed_kmh: 70}
+  - {code: P.127_80, group: prohibitory, name: Tốc độ tối đa cho phép 80 km/h, speed_kmh: 80}
+  - {code: R.303, group: mandatory, name: Nơi giao nhau chạy theo vòng xuyến}
+  - {code: R.302a, group: mandatory, name: Hướng phải đi vòng chướng ngại vật sang phải}
+  - {code: W.207a, group: warning, name: Giao nhau với đường không ưu tiên}
+  - {code: W.224, group: warning, name: Đường người đi bộ cắt ngang}
+  - {code: W.225, group: warning, name: Trẻ em}
+  - {code: W.245a, group: warning, name: Đi chậm}
+  - {code: S.508a, group: auxiliary, name: Biểu thị thời gian}
+  - {code: S.509a, group: auxiliary, name: Thuyết minh biển chính}
+  - {code: DP.134, group: prohibitory, name: Hết tốc độ tối đa cho phép, ends_speed_limit: true}
+  - {code: DP.135, group: prohibitory, name: Hết tất cả các lệnh cấm, ends_speed_limit: true}

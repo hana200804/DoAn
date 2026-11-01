@@ -43,6 +43,7 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+*.egg-info/
 
 # Dữ liệu và trọng số không nằm trong git (xem docs/05-du-lieu.md)
 ai/data/raw/
