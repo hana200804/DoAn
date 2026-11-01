@@ -30,7 +30,7 @@ services:
     image: rustfs/rustfs@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
     environment:
       RUSTFS_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY}
+      RUSTFS_SECRET_KEY: ${MINIO_SECRET_KEY:?Đặt MINIO_SECRET_KEY trong .env}
     # 9000 mở ra ngoài vì app tải ảnh thẳng lên MinIO bằng presigned URL (ADR-0006)
     ports:
       - "9000:9000"
@@ -50,7 +50,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Đặt ADMIN_PASSWORD (≥ 12 ký tự) trong .env}
       # Để trống MAIL_HOST thì OTP chỉ ghi ra log của auth-service
       SPRING_MAIL_HOST: ${MAIL_HOST:-}
       SPRING_MAIL_PORT: ${MAIL_PORT:-587}
