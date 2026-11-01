@@ -1,0 +1,36 @@
+server:
+  port: ${PORT:8083}
+  shutdown: graceful
+
+spring:
+  application:
+    name: sign-service
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/sign_db}
+    username: ${DB_USER:signa}
+    password: ${DB_PASSWORD:signa}
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  jackson:
+    default-property-inclusion: non_null
+
+signa:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    # Địa chỉ điện thoại và trình duyệt dùng để tải ảnh qua presigned URL
+    public-endpoint: ${MINIO_PUBLIC_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:signa}
+    secret-key: ${MINIO_SECRET_KEY:signa-secret}
+    bucket: ${MINIO_BUCKET:sign-crops}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

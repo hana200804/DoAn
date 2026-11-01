@@ -1,0 +1,30 @@
+server:
+  port: ${PORT:8082}
+  shutdown: graceful
+
+spring:
+  application:
+    name: map-service
+  config:
+    import: optional:file:.env[.properties]
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  cache:
+    type: redis
+    redis:
+      time-to-live: P1D
+  jackson:
+    default-property-inclusion: non_null
+
+signa:
+  vietmap:
+    base-url: ${VIETMAP_BASE_URL:https://maps.vietmap.vn/api}
+    api-key: ${VIETMAP_API_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

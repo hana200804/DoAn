@@ -1,0 +1,53 @@
+server:
+  port: ${PORT:8081}
+  shutdown: graceful
+
+spring:
+  application:
+    name: auth-service
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/auth_db}
+    username: ${DB_USER:signa}
+    password: ${DB_PASSWORD:signa}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  jackson:
+    default-property-inclusion: non_null
+
+signa:
+  session:
+    ttl: P30D
+  otp:
+    ttl: PT10M
+    max-attempts: 5
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  # Không có SMTP thì OTP chỉ ghi log; kiểm tra kết nối mail sẽ báo DOWN giả
+  health:
+    mail:
+      enabled: false
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
