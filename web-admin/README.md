@@ -2,8 +2,6 @@
 
 Website cho quản trị viên: duyệt các biển báo có mâu thuẫn, xử lý báo cáo sai, gán nhãn ảnh khó cho vòng huấn luyện lại, quản lý danh mục biển và xem thống kê.
 
-> **Trạng thái:** chưa có mã nguồn. Tài liệu này là đặc tả phạm vi và quy ước trước khi code.
-
 ## Mục lục
 
 - [Phạm vi](#phạm-vi)
@@ -32,27 +30,22 @@ Admin **không duyệt từng biển**: biển có điểm tin cậy cao đượ
 | --- | --- |
 | Ngôn ngữ | TypeScript |
 | Framework | React 18 + Vite |
-| UI | Ant Design |
-| Dữ liệu | TanStack Query, Axios |
+| UI | CSS thuần |
+| Dữ liệu | `fetch` + hook `useLoad` |
 | Định tuyến | React Router |
-| Bản đồ | VietMap GL JS |
-| Biểu đồ | Recharts |
-| Gán nhãn | Canvas (Konva) để vẽ/sửa bounding box |
-| Kiểm tra | ESLint, Prettier, Vitest, Playwright |
+| Gán nhãn | Canvas HTML (khi làm #44) |
+| Kiểm tra | `tsc --noEmit`, Vitest |
 
 ## Cấu trúc thư mục dự kiến
 
 ```text
 web-admin/
 ├── src/
-│   ├── pages/           # conflicts, reports, labeling, signs, stats, login
-│   ├── features/        # logic theo nghiệp vụ (hooks, API calls)
-│   ├── components/      # thành phần dùng chung
-│   ├── api/             # client sinh từ OpenAPI của backend
-│   ├── routes/
-│   └── main.tsx
-├── tests/e2e/           # Playwright
-├── .env.example
+│   ├── pages/        # Login, Conflicts, Reports, SignTypes
+│   ├── api.ts        # gọi /api/v1, phiên trong sessionStorage, lỗi chuẩn (có test)
+│   ├── useLoad.ts
+│   └── main.tsx      # điều hướng
+├── Dockerfile        # build tĩnh, phục vụ bằng nginx
 ├── package.json
 └── vite.config.ts
 ```
@@ -70,11 +63,9 @@ web-admin/
 
 ## Cài đặt và chạy
 
-> Hướng dẫn chi tiết được bổ sung khi khởi tạo mã nguồn.
-
 ```bash
 cd web-admin
-cp .env.example .env        # VITE_API_BASE_URL, VITE_VIETMAP_API_KEY
+# /api được chuyển sang nginx của infra/ (mặc định http://localhost:8080, đổi bằng VITE_API_PROXY)
 npm install
 npm run dev                 # http://localhost:5173
 ```
@@ -83,8 +74,7 @@ npm run dev                 # http://localhost:5173
 
 | Loại | Công cụ | Lệnh |
 | --- | --- | --- |
-| Unit / component | Vitest + Testing Library | `npm test` |
-| End-to-end | Playwright | `npm run test:e2e` |
+| Unit | Vitest | `npm test` |
 
 ## Tài liệu liên quan
 

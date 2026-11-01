@@ -52,7 +52,7 @@ flowchart TB
 
     subgraph Storage["Lưu trữ"]
         MySQL[("MySQL<br/>auth_db · sign_db")]
-        Redis[("Redis<br/>phiên · cache · stream")]
+        Redis[("Redis<br/>phiên · cache")]
         MinIO[("MinIO<br/>ảnh cắt · mô hình")]
     end
 
@@ -119,24 +119,20 @@ sequenceDiagram
     participant App
     participant Sign as sign-service
     participant S3 as MinIO
-    participant Q as Redis Stream
-    participant W as Worker trong sign-service
     participant AI as ai-service
 
     App->>Sign: POST /observations (lô quan sát, Idempotency-Key)
     Sign-->>App: 201 batchId + presigned URL cho từng ảnh cắt
     App->>S3: PUT ảnh cắt
     App->>Sign: POST /observations/{batchId}/complete
-    Sign->>Q: đẩy batchId
+    Sign->>Sign: gán quan sát vào cụm, cập nhật điểm tin cậy
     Sign-->>App: 202
-    W->>Q: đọc batchId
-    W->>W: gán quan sát vào cụm, cập nhật điểm tin cậy
     opt độ tin cậy thấp hoặc có biển phụ
-        W->>AI: Reclassify / ReadSubSign
-        AI-->>W: mã biển / điều kiện biển phụ
+        Sign->>AI: Reclassify / ReadSubSign (chưa cài, #42)
+        AI-->>Sign: mã biển / điều kiện biển phụ
     end
     opt cụm mâu thuẫn hoặc ảnh khó
-        W->>W: tạo mục cho quản trị viên / nhiệm vụ gán nhãn
+        Sign->>Sign: cụm chuyển CONFLICT cho quản trị viên
     end
 ```
 
@@ -227,7 +223,7 @@ flowchart LR
 | `/api/v1/auth/*`, `/api/v1/users/*` | auth-service |
 | `/api/v1/places/*`, `/api/v1/routes` | map-service |
 | `/api/v1/signs/*`, `/api/v1/sign-types/*`, `/api/v1/observations/*`, `/api/v1/models/*`, `/api/v1/me/*`, `/api/v1/admin/*` | sign-service |
-| `/storage/*` | MinIO (chỉ presigned URL) |
+| Cổng 9000 (không qua nginx) | Kho S3, chỉ dùng qua presigned URL |
 | `/` | web-admin |
 
 Môi trường local dùng cùng cấu hình nginx ở cổng 8080, nên app và web chỉ cần một địa chỉ gốc. ai-service, MySQL, Redis chỉ mở trong mạng nội bộ của Docker. Cấu hình chi tiết: [infra/README.md](../infra/README.md).

@@ -2,8 +2,6 @@
 
 Toàn bộ phần học máy: dữ liệu, huấn luyện, đánh giá, xuất mô hình cho điện thoại, và `ai-service` (gRPC) chạy phía server.
 
-> **Trạng thái:** chưa có mã nguồn. Tài liệu này là đặc tả phạm vi và quy ước trước khi code.
-
 ## Mục lục
 
 - [Phạm vi](#phạm-vi)
@@ -33,7 +31,7 @@ Toàn bộ phần học máy: dữ liệu, huấn luyện, đánh giá, xuất m
 | Mô hình | Vai trò | Chạy ở | Đầu vào → đầu ra |
 | --- | --- | --- | --- |
 | **Detector** (YOLOv8n) | Tìm vùng biển báo, phân theo nhóm hình dạng | Điện thoại | Khung hình 640 px → box + nhóm |
-| **Classifier** (MobileNetV3-Small) | Gán mã biển QCVN 41 cho ảnh cắt | Điện thoại | Ảnh cắt 96×96 → mã biển + xác suất |
+| **Classifier** (YOLOv8n-cls) | Gán mã biển QCVN 41 cho ảnh cắt | Điện thoại | Ảnh cắt 96×96 → mã biển + xác suất |
 | **Teacher** (YOLOv8m, 960 px) | Mô hình thầy để chưng cất; phân loại lại ảnh khó | Server | Ảnh → box + mã biển |
 | **OCR** (PaddleOCR / VietOCR) | Đọc chữ biển phụ | Server | Ảnh cắt biển phụ → chuỗi + điều kiện |
 | **Baseline** YOLOv5s, YOLOv8s, DETR-R50 | Mô hình đối chứng để so sánh | Máy huấn luyện | — |
@@ -45,38 +43,33 @@ Thiết kế chi tiết: [Thiết kế AI](../docs/04-thiet-ke-ai.md) · Lý do 
 | Hạng mục | Lựa chọn |
 | --- | --- |
 | Ngôn ngữ | Python 3.11 |
-| Học sâu | PyTorch, Ultralytics, timm, Hugging Face Transformers (DETR) |
-| Tăng cường dữ liệu | Albumentations |
+| Học sâu | Ultralytics (YOLOv8n, YOLOv8n-cls); PyTorch, Transformers cho đối chứng DETR |
+| Tăng cường dữ liệu | Có sẵn trong Ultralytics, tắt lật ngang |
 | Gán nhãn | Roboflow (khởi đầu) → hàng đợi gán nhãn trên web quản trị |
 | Xuất mô hình | Ultralytics export → TFLite INT8; ONNX cho server |
 | Theo dõi thí nghiệm | File YAML + CSV trong `experiments/` (đủ cho quy mô đồ án) |
 | Phiên bản dữ liệu | Manifest có hash trong `data/manifests/`, ảnh lưu ở MinIO / Google Drive |
 | Phục vụ | gRPC (`grpcio`), ONNX Runtime |
-| Chất lượng mã | Ruff, mypy, pytest |
+| Chất lượng mã | Ruff, pytest |
 
 ## Cấu trúc thư mục dự kiến
 
 ```text
 ai/
-├── configs/                 # cấu hình huấn luyện YAML (một file cho mỗi thí nghiệm)
-│   ├── data/                # định nghĩa tập dữ liệu, danh sách nhãn
-│   └── train/
 ├── data/
-│   ├── manifests/           # danh sách file + hash theo phiên bản (có trong git)
-│   ├── labels.yaml          # danh mục nhãn QCVN 41 (có trong git)
+│   ├── labels.yaml          # danh mục nhóm và mã biển, có phiên bản (trong git)
+│   ├── manifests/           # manifest có hash theo phiên bản (trong git)
 │   └── raw/ processed/      # ảnh (KHÔNG commit)
 ├── src/signa_ai/
-│   ├── data/                # tải, kiểm tra, chia tập, tăng cường
-│   ├── train/               # huấn luyện detector, classifier, chưng cất
-│   ├── eval/                # mAP, recall theo lớp, ECE, đánh giá trên video
-│   ├── export/              # TFLite INT8, ONNX
-│   └── serving/             # ai-service gRPC
-├── experiments/             # kết quả từng thí nghiệm (EXP-xxx.md + metrics.csv)
-├── notebooks/               # khám phá dữ liệu, phân tích lỗi (không chứa logic chính)
+│   ├── labels.py            # nạp danh mục, sinh SQL cho sign_types
+│   ├── dataset.py           # kiểm tra nhãn, manifest, chia tập theo chuỗi, sinh tập detector/classifier
+│   ├── calibration.py       # temperature scaling, ECE
+│   ├── train.py             # huấn luyện, hiệu chỉnh, xuất TFLite INT8 + manifest bộ mô hình
+│   ├── subsign.py           # phân tích chữ biển phụ
+│   └── cli.py               # lệnh signa-ai
+├── experiments/             # kết quả từng thí nghiệm
 ├── tests/
-├── weights/                 # trọng số (KHÔNG commit, xem bên dưới)
-├── pyproject.toml
-└── Dockerfile               # ảnh cho ai-service
+└── pyproject.toml
 ```
 
 ## Quy trình huấn luyện
@@ -129,14 +122,13 @@ Mỗi thí nghiệm có issue loại **Thí nghiệm AI**, nhánh `exp/<mô-tả
 
 ## Cài đặt
 
-> Hướng dẫn chi tiết được bổ sung khi khởi tạo mã nguồn.
-
 ```bash
 cd ai
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"          # thêm .[train] để huấn luyện
 pytest
+signa-ai -h
 ```
 
 Huấn luyện cần GPU NVIDIA ≥ 8 GB VRAM.

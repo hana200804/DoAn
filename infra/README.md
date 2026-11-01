@@ -2,8 +2,6 @@
 
 Cấu hình chạy toàn bộ hệ thống bằng Docker Compose cho môi trường phát triển và máy chủ demo (VPS Ubuntu).
 
-> **Trạng thái:** chưa có cấu hình. Tài liệu này là đặc tả trước khi viết.
-
 ## Mục lục
 
 - [Thành phần](#thành-phần)
@@ -19,7 +17,7 @@ Cấu hình chạy toàn bộ hệ thống bằng Docker Compose cho môi trư�
 | --- | --- | --- | --- |
 | `mysql` | `mysql:8` | 3306 | Hai CSDL: `auth_db`, `sign_db` |
 | `redis` | `redis:7` | 6379 | Phiên, cache, Redis Streams |
-| `minio` | `minio/minio` | 9000 / 9001 | Ảnh cắt biển báo, bucket `sign-crops` |
+| `minio` | `rustfs/rustfs` (tương thích S3) | 9000 | Ảnh cắt biển báo, bucket `sign-crops`. MinIO đã ngừng phát hành image công khai |
 | `auth-service` | build từ `backend/` | 8081 | |
 | `map-service` | build từ `backend/` | 8082 | |
 | `sign-service` | build từ `backend/` | 8083 | |
@@ -39,16 +37,14 @@ Cấu hình chạy toàn bộ hệ thống bằng Docker Compose cho môi trư�
 ```text
 infra/
 ├── docker-compose.yml          # local: hạ tầng + service
-├── docker-compose.demo.yml     # ghi đè cho VPS
+├── docker-compose.demo.yml     # ghi đè cho VPS (chưa có, #51)
 ├── .env.example                # toàn bộ biến môi trường, không có giá trị thật
 ├── mysql/init/                 # script tạo CSDL, user
 ├── nginx/                      # cấu hình reverse proxy
-└── scripts/                    # backup.sh, restore.sh, deploy.sh
+└── scripts/                    # backup.sh, restore.sh, deploy.sh (chưa có, #51)
 ```
 
 ## Chạy toàn bộ hệ thống
-
-> Hướng dẫn chi tiết được bổ sung khi khởi tạo mã nguồn.
 
 ```bash
 cd infra
