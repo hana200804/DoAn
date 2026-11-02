@@ -29,12 +29,10 @@ class ObservationQueue(
         dir.walkTopDown().filter { it.isDirectory && it.name.endsWith(".tmp") }.toList().forEach { it.deleteRecursively() }
     }
 
-    private fun userDir(): File? = prefs.userId?.let { File(dir, it) }
-
     /** [crop] null với quan sát âm. */
     fun add(observation: JSONObject, crop: Bitmap?, subCrop: Bitmap?) {
-        val user = userDir() ?: return
-        if (prefs.session == null || !prefs.contribute) return
+        val user = File(dir, (prefs.auth ?: return).userId)
+        if (!prefs.contribute) return
         val id = observation.getString("clientId")
         val tmp = File(user, "$id.tmp").apply { mkdirs() }
         crop?.let { c -> File(tmp, CROP).outputStream().use { c.compress(Bitmap.CompressFormat.JPEG, 85, it) } }
@@ -44,10 +42,10 @@ class ObservationQueue(
         trim(user)
     }
 
-    fun size(): Int = userDir()?.let { observations(it).size } ?: 0
+    fun size(): Int = prefs.auth?.let { observations(File(dir, it.userId)).size } ?: 0
 
     fun canUpload(): Boolean {
-        if (prefs.session == null || prefs.userId == null || !prefs.contribute) return false
+        if (prefs.auth == null || !prefs.contribute) return false
         val cm = context.getSystemService(ConnectivityManager::class.java)
         val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
@@ -56,8 +54,9 @@ class ObservationQueue(
 
     /** Gửi một lô của tài khoản đang đăng nhập. Chạy trên luồng nền. */
     fun uploadOnce(modelVersion: String, labelMapVersion: Int) {
-        val user = userDir() ?: return
-        val token = prefs.session ?: return
+        // Một ảnh chụp cho cả lượt gửi: thư mục và token luôn của cùng một tài khoản
+        val auth = prefs.auth ?: return
+        val user = File(dir, auth.userId)
         val batch = pendingBatch(user) ?: return
         val key = batch.name.removePrefix("batch-")
         // Quan sát thiếu file không thể gửi; bỏ lại để xoá cùng lô thay vì kẹt hàng đợi
@@ -70,15 +69,13 @@ class ObservationQueue(
             batch.deleteRecursively()
             return
         }
-        // Giữ nguyên phiên của chủ hàng đợi cho cả lượt gửi
-        val auth = mapOf("Authorization" to "Bearer $token")
         val body = JSONObject()
             .put("modelVersion", modelVersion)
             .put("labelMapVersion", labelMapVersion)
             .put("deviceModel", Build.MODEL)
             .put("observations", JSONArray(items))
         val res = try {
-            JSONObject(api.post("/observations", body, auth + ("Idempotency-Key" to key)))
+            JSONObject(api.post("/observations", body, mapOf("Idempotency-Key" to key), auth))
         } catch (e: ApiException) {
             // Dữ liệu sai (ví dụ mã biển không có trong danh mục server) thì gửi lại cũng vô ích
             if (e.status == 400 || e.status == 422) batch.deleteRecursively()
@@ -92,7 +89,7 @@ class ObservationQueue(
             val sub = File(obs, SUB)
             if (!u.isNull("subSignUploadUrl") && sub.exists()) api.putFile(u.getString("subSignUploadUrl"), sub)
         }
-        api.post("/observations/${res.getString("batchId")}/complete", headers = auth)
+        api.post("/observations/${res.getString("batchId")}/complete", auth = auth)
         batch.deleteRecursively()
     }
 

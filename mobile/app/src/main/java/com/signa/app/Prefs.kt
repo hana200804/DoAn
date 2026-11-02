@@ -7,14 +7,20 @@ import com.signa.core.VehicleType
 class Prefs(context: Context) {
     private val p = context.getSharedPreferences("signa", Context.MODE_PRIVATE)
 
-    var session: String?
-        get() = p.getString("session", null)
-        set(v) = p.edit().putString("session", v).apply()
+    /** Phiên đăng nhập: chủ tài khoản và token luôn được đọc, ghi cùng nhau. */
+    data class Auth(val userId: String, val session: String)
 
-    /** Chủ hàng đợi quan sát; quan sát của người khác trên cùng máy không bị gửi bằng phiên này. */
-    var userId: String?
-        get() = p.getString("userId", null)
-        set(v) = p.edit().putString("userId", v).apply()
+    @get:Synchronized
+    @set:Synchronized
+    var auth: Auth?
+        get() = p.getString("auth", null)?.split('\n')?.takeIf { it.size == 2 }?.let { Auth(it[0], it[1]) }
+        set(v) = p.edit().putString("auth", v?.let { "${it.userId}\n${it.session}" }).apply()
+
+    /** Chỉ xoá nếu phiên hiện tại vẫn là [expected]: phản hồi 401 của phiên cũ không đăng xuất phiên mới. */
+    @Synchronized
+    fun clearAuthIf(expected: Auth) {
+        if (auth == expected) auth = null
+    }
 
     var displayName: String?
         get() = p.getString("displayName", null)

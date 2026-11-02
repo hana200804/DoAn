@@ -14,7 +14,14 @@ import java.util.UUID
 import kotlin.math.tan
 
 /** Vị trí GPS mới nhất. */
-data class Fix(val lat: Double, val lng: Double, val speedKmh: Float, val bearing: Double, val timeMs: Long)
+data class Fix(val lat: Double, val lng: Double, val speedKmh: Float, val bearing: Double, val timeMs: Long) {
+    /** Null nếu fix đã cũ (GPS mất tín hiệu hoặc bị tắt): không dùng để định vị biển hay cảnh báo tốc độ. */
+    fun freshAt(nowMs: Long): Fix? = takeIf { nowMs - timeMs <= MAX_AGE_MS }
+
+    companion object {
+        const val MAX_AGE_MS = 3_000L
+    }
+}
 
 /** Hộp hiển thị trên màn hình lái xe. */
 data class TrackView(val box: Box, val code: String?, val confirmed: Boolean)

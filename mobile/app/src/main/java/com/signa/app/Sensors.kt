@@ -17,7 +17,8 @@ class LocationTracker(context: Context) {
     fun start(onFix: (Fix) -> Unit) {
         stop()
         val l = LocationListener { loc: Location ->
-            onFix(Fix(loc.latitude, loc.longitude, loc.speed * 3.6f, loc.bearing.toDouble(), loc.time))
+            // Giờ nhận trên máy (không dùng loc.time của GPS) để so tuổi fix với currentTimeMillis
+            onFix(Fix(loc.latitude, loc.longitude, loc.speed * 3.6f, loc.bearing.toDouble(), System.currentTimeMillis()))
         }
         listener = l
         manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, l)

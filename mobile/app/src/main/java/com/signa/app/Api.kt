@@ -13,21 +13,27 @@ class Api(private val baseUrl: String, private val prefs: Prefs) {
 
     fun get(path: String): String = request("GET", path)
 
-    fun post(path: String, body: JSONObject? = null, headers: Map<String, String> = emptyMap()): String =
-        request("POST", path, body, headers)
+    /** [auth]: phiên dùng cho request; mặc định là phiên hiện tại. */
+    fun post(
+        path: String,
+        body: JSONObject? = null,
+        headers: Map<String, String> = emptyMap(),
+        auth: Prefs.Auth? = prefs.auth,
+    ): String = request("POST", path, body, headers, auth)
 
     fun request(
         method: String,
         path: String,
         body: JSONObject? = null,
         headers: Map<String, String> = emptyMap(),
+        auth: Prefs.Auth? = prefs.auth,
     ): String {
         val conn = URL("$baseUrl/api/v1$path").openConnection() as HttpURLConnection
         try {
             conn.requestMethod = method
             conn.connectTimeout = 10_000
             conn.readTimeout = 20_000
-            prefs.session?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+            auth?.let { conn.setRequestProperty("Authorization", "Bearer ${it.session}") }
             headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
             if (body != null) {
                 conn.doOutput = true
@@ -37,7 +43,7 @@ class Api(private val baseUrl: String, private val prefs: Prefs) {
             val status = conn.responseCode
             val text = (if (status < 400) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (status == 401) prefs.session = null
+            if (status == 401 && auth != null) prefs.clearAuthIf(auth)
             if (status >= 400) {
                 val err = runCatching { JSONObject(text) }.getOrNull()
                 throw ApiException(status, err?.optString("code") ?: "HTTP_$status", err?.optString("message") ?: "Lỗi $status")
