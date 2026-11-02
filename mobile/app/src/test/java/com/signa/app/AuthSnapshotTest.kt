@@ -2,7 +2,6 @@ package com.signa.app
 
 import android.app.Application
 import android.graphics.Bitmap
-import com.sun.net.httpserver.HttpServer
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -13,10 +12,12 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
-import java.net.InetSocketAddress
+import java.net.InetAddress
+import java.net.ServerSocket
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.concurrent.thread
 
 /** Đổi tài khoản giữa lúc đang gọi mạng không làm lẫn phiên giữa hai người. */
 @RunWith(RobolectricTestRunner::class)
@@ -27,34 +28,50 @@ class AuthSnapshotTest {
     private val a = Prefs.Auth("A", "token-A")
     private val b = Prefs.Auth("B", "token-B")
     private val seenTokens = CopyOnWriteArrayList<String>()
-    private lateinit var server: HttpServer
+    private val server = ServerSocket(0, 50, InetAddress.getLoopbackAddress())
     private lateinit var api: Api
+
+    // Server HTTP tối thiểu (unit test Android không có com.sun.net.httpserver)
+    private fun serve() = thread(isDaemon = true) {
+        while (!server.isClosed) {
+            val socket = runCatching { server.accept() }.getOrNull() ?: break
+            socket.use {
+                val input = it.getInputStream().bufferedReader()
+                val path = input.readLine().split(' ')[1]
+                var length = 0
+                generateSequence { input.readLine() }.takeWhile { line -> line.isNotEmpty() }.forEach { line ->
+                    val (name, value) = line.split(':', limit = 2).map(String::trim)
+                    if (name.equals("Authorization", true)) seenTokens += value
+                    if (name.equals("Content-Length", true)) length = value.toInt()
+                }
+                repeat(length) { input.read() }
+                val (status, body) = when {
+                    path.endsWith("/expired") -> 401 to """{"code":"UNAUTHENTICATED"}"""
+                    path.endsWith("/observations") -> {
+                        prefs.auth = b // B đăng nhập đúng lúc lượt gửi của A đang chạy
+                        201 to """{"batchId":"b1","uploads":[]}"""
+                    }
+                    else -> 202 to ""
+                }
+                val bytes = body.toByteArray()
+                it.getOutputStream().apply {
+                    write("HTTP/1.1 $status X\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                    write(bytes)
+                    flush()
+                }
+            }
+        }
+    }
 
     @Before
     fun setUp() {
-        server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        server.createContext("/") { ex ->
-            seenTokens += ex.requestHeaders.getFirst("Authorization").orEmpty()
-            val (status, body) = when {
-                ex.requestURI.path.endsWith("/expired") -> 401 to """{"code":"UNAUTHENTICATED"}"""
-                ex.requestURI.path.endsWith("/observations") -> {
-                    prefs.auth = b // B đăng nhập đúng lúc lượt gửi của A đang chạy
-                    201 to """{"batchId":"b1","uploads":[]}"""
-                }
-                else -> 202 to ""
-            }
-            val bytes = body.toByteArray()
-            ex.sendResponseHeaders(status, if (bytes.isEmpty()) -1 else bytes.size.toLong())
-            if (bytes.isNotEmpty()) ex.responseBody.use { it.write(bytes) }
-            ex.close()
-        }
-        server.start()
-        api = Api("http://127.0.0.1:${server.address.port}", prefs)
+        serve()
+        api = Api("http://127.0.0.1:${server.localPort}", prefs)
         prefs.contribute = true
     }
 
     @After
-    fun tearDown() = server.stop(0)
+    fun tearDown() = server.close()
 
     @Test
     fun `401 of an old session does not log out the new one`() {
