@@ -22,7 +22,9 @@ public class ReviewService {
 
   @Transactional
   public void report(String clusterId, String userId, String reason, String note) {
-    repo.cluster(clusterId).orElseThrow(() -> ApiException.notFound("Không tìm thấy biển báo"));
+    // Khoá cụm để hai request gửi lại cùng lúc không cùng thấy "chưa có báo cáo"
+    repo.clusterForUpdate(clusterId)
+        .orElseThrow(() -> ApiException.notFound("Không tìm thấy biển báo"));
     if (repo.hasPendingReport(clusterId, userId)) {
       throw ApiException.conflict("Bạn đã có một báo cáo đang chờ xử lý cho biển này");
     }

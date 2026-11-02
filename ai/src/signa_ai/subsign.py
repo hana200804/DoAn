@@ -52,10 +52,14 @@ def parse(text: str) -> dict:
 
 
 def _clock(h: str, m: str) -> str | None:
-    """Chuỗi HH:MM hợp lệ cho LocalTime; 24h đổi thành 23:59. None nếu OCR đọc ra giờ/phút sai."""
+    """Chuỗi HH:MM hợp lệ cho LocalTime; None nếu OCR đọc ra giờ/phút sai.
+
+    24h là nửa đêm "00:00": app hiểu cửa sổ có ``to`` nhỏ hơn ``from`` là qua nửa đêm, và ``from``
+    bằng ``to`` là cả ngày, nên 22h-24h vẫn áp dụng tới hết 23:59:59.
+    """
     h, m = int(h), int(m or 0)
     if (h, m) == (24, 0):
-        return "23:59"
+        return "00:00"
     return f"{h:02d}:{m:02d}" if h < 24 and m < 60 else None
 
 

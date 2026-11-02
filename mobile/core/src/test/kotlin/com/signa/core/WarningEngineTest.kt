@@ -3,7 +3,9 @@ package com.signa.core
 import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** UT-M05 → UT-M10 (docs/08-kiem-thu.md §2.1). */
 class WarningEngineTest {
@@ -107,6 +109,61 @@ class WarningEngineTest {
             .withLimit50()
         e.onSign("track:2", "DP.134", null, false, 1_000)
         assertNull(e.limitKmh)
+    }
+
+    @Test
+    fun `track whose label changes from 50 to 80 updates the limit`() {
+        val e = engine(catalog = catalog + ("P.127_80" to SignInfo("P.127_80", SignGroup.PROHIBITORY, "80", speedKmh = 80)))
+        e.onSign("track:1", "P.127_50", null, false, 0)
+        e.onSign("track:1", "P.127_80", null, false, 500)
+        assertEquals(80, e.limitKmh)
+    }
+
+    @Test
+    fun `new 50 sign after an end-of-limit sign sets the limit again`() {
+        val e = engine(catalog = catalog + ("DP.134" to SignInfo("DP.134", SignGroup.PROHIBITORY, "Hết", endsSpeedLimit = true)))
+        e.onSign("track:1", "P.127_50", null, false, 0)
+        e.onSign("track:2", "DP.134", null, false, 5_000)
+        e.onSign("track:3", "P.127_50", null, false, 10_000)
+        assertEquals(50, e.limitKmh)
+        assertEquals(listOf("Giới hạn 50", "Giới hạn 50"), e.drain(0).let { it + e.drain(10_000) })
+    }
+
+    @Test
+    fun `sub-sign confirmed after the main sign still adds the caution`() {
+        val e = engine()
+        e.onSign("track:1", "P.131a", null, false, 0)
+        e.onSign("track:1", "P.131a", null, true, 100)
+        assertEquals(listOf("Phía trước cấm đỗ xe, có biển phụ, chú ý điều kiện"), e.drain(100))
+
+        e.onSign("track:2", "P.123a", null, false, 30_000)
+        assertEquals("Phía trước cấm rẽ trái", e.nextSpeech(30_000)?.text)
+        e.onSign("track:2", "P.123a", null, true, 31_000)
+        assertEquals("Có biển phụ, chú ý điều kiện", e.nextSpeech(34_000)?.text)
+    }
+
+    @Test
+    fun `looping around a small block warns again, stopping near the sign does not`() {
+        val e = engine()
+        e.onMapSign("c1", "W.225", null, false, distanceAheadM = 40.0, speedKmh = 30f, nowMs = 0)
+        assertEquals(listOf("Chú ý, trẻ em"), e.drain(0))
+
+        e.releasePassedMapSigns(ahead = emptySet(), distancesM = mapOf("c1" to 20.0)) // đứng yên, mất hướng
+        e.onMapSign("c1", "W.225", null, false, distanceAheadM = 20.0, speedKmh = 0f, nowMs = 30_000)
+        assertEquals(emptyList(), e.drain(30_000))
+
+        e.releasePassedMapSigns(ahead = emptySet(), distancesM = mapOf("c1" to 120.0)) // đã qua, vẫn trong 300 m
+        e.onMapSign("c1", "W.225", null, false, distanceAheadM = 40.0, speedKmh = 30f, nowMs = 90_000)
+        assertEquals(listOf("Chú ý, trẻ em"), e.drain(90_000))
+    }
+
+    @Test
+    fun `window ending at 24h applies in the last minute and a full-day window always applies`() {
+        val lateEvening = Conditions(timeWindows = listOf(LocalTime.of(22, 0) to LocalTime.MIDNIGHT))
+        assertTrue(lateEvening.applies(VehicleType.CAR, LocalTime.of(23, 59, 30)))
+        assertFalse(lateEvening.applies(VehicleType.CAR, LocalTime.of(21, 0)))
+        val allDay = Conditions(timeWindows = listOf(LocalTime.MIDNIGHT to LocalTime.MIDNIGHT))
+        assertTrue(allDay.applies(VehicleType.CAR, LocalTime.of(3, 0)))
     }
 
     @Test

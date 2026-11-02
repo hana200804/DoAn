@@ -35,4 +35,5 @@ def test_combined_conditions():
 
 def test_invalid_clock_is_not_a_condition_and_24h_is_end_of_day():
     assert parse("6h99-24h30")["parsed"] is False
-    assert parse("22h-24h")["conditions"]["timeWindows"] == [{"from": "22:00", "to": "23:59"}]
+    assert parse("22h-24h")["conditions"]["timeWindows"] == [{"from": "22:00", "to": "00:00"}]
+    assert parse("0h-24h")["conditions"]["timeWindows"] == [{"from": "00:00", "to": "00:00"}]

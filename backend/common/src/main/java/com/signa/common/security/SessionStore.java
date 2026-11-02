@@ -85,7 +85,8 @@ public class SessionStore {
       String key = SESSION_PREFIX + id;
       Long remaining = redis.getExpire(key);
       if (remaining != null && remaining > 0) {
-        redis.opsForValue().set(key, write(principal), Duration.ofSeconds(remaining));
+        // SET XX: phiên vừa bị đăng xuất giữa hai lệnh thì không bị tạo lại
+        redis.opsForValue().setIfPresent(key, write(principal), Duration.ofSeconds(remaining));
       }
     }
   }

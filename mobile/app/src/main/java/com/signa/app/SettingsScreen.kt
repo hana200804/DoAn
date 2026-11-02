@@ -40,7 +40,7 @@ fun SettingsScreen() {
     var voice by remember { mutableStateOf(prefs.voice) }
     var contribute by remember { mutableStateOf(prefs.contribute) }
     var wifiOnly by remember { mutableStateOf(prefs.wifiOnly) }
-    var loggedIn by remember { mutableStateOf(prefs.session != null) }
+    var loggedIn by remember { mutableStateOf(prefs.auth != null) }
 
     Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Loại xe")
@@ -99,8 +99,7 @@ private fun Account(onLogout: () -> Unit) {
     TextButton(onClick = {
         scope.launch {
             call { app.api.post("/auth/logout") }
-            app.prefs.session = null
-            app.prefs.userId = null
+            app.prefs.auth = null
             onLogout()
         }
     }) { Text("Đăng xuất") }
@@ -120,8 +119,7 @@ private fun AuthForm(onLogin: () -> Unit) {
     fun login() = scope.launch {
         message = call {
             val res = JSONObject(app.api.post("/auth/login", JSONObject().put("email", email).put("password", password)))
-            app.prefs.session = res.getString("sessionId")
-            app.prefs.userId = res.getJSONObject("user").getString("id")
+            app.prefs.auth = Prefs.Auth(res.getJSONObject("user").getString("id"), res.getString("sessionId"))
             app.prefs.displayName = res.getJSONObject("user").getString("displayName")
         }
         if (message == null) onLogin()

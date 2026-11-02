@@ -1,21 +1,21 @@
 import { useCallback } from 'react'
 import { api, Conflict, post } from '../api'
-import { useLoad } from '../useLoad'
+import { useAction, useLoad } from '../useLoad'
 
 /** Cụm biển có nhiều mã cạnh tranh; quản trị viên chốt mã đúng hoặc loại cụm (FR-21). */
 export default function Conflicts() {
   const { data, error, reload } = useLoad(useCallback(() => api<Conflict[]>('/admin/conflicts'), []))
 
-  const resolve = async (id: string, body: object) => {
-    await post(`/admin/conflicts/${id}/resolve`, body)
-    reload()
-  }
+  const { busy, actionError, run } = useAction(reload)
+  const resolve = (id: string, body: object) => run(() => post(`/admin/conflicts/${id}/resolve`, body))
 
   if (error) return <p className="error">{error}</p>
   if (!data) return <p>Đang tải…</p>
   if (data.length === 0) return <p>Không có ca mâu thuẫn nào.</p>
 
   return (
+    <>
+    {actionError && <p className="error">{actionError}</p>}
     <div className="cards">
       {data.map(({ sign, codeWeights }) => (
         <article key={sign.id} className="card">
@@ -28,13 +28,14 @@ export default function Conflicts() {
               .sort((a, b) => b[1] - a[1])
               .map(([code, weight]) => (
                 <li key={code}>
-                  <button onClick={() => resolve(sign.id, { signCode: code })}>Chốt {code}</button> trọng số{' '}
+                  <button disabled={busy} onClick={() => resolve(sign.id, { signCode: code })}>Chốt {code}</button> trọng số{' '}
                   {weight.toFixed(2)}
                 </li>
               ))}
           </ul>
           <button
             className="danger"
+            disabled={busy}
             onClick={() => {
               const reason = prompt('Lý do loại cụm biển này?')
               if (reason) resolve(sign.id, { reject: true, reason })
@@ -45,5 +46,6 @@ export default function Conflicts() {
         </article>
       ))}
     </div>
+    </>
   )
 }

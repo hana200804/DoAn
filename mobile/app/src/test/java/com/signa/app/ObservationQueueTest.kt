@@ -32,8 +32,7 @@ class ObservationQueueTest {
     }
 
     private fun login(userId: String) {
-        prefs.userId = userId
-        prefs.session = "session-$userId"
+        prefs.auth = Prefs.Auth(userId, "session-$userId")
     }
 
     private fun observation() = JSONObject()

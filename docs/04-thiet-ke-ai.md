@@ -169,6 +169,7 @@ flowchart LR
 | Mẫu chữ | Kết quả |
 | --- | --- |
 | `6h-22h`, `6h30 - 22h`, `Từ 6h đến 22h` | `timeWindows: [{from: "06:00", to: "22:00"}]` |
+| `22h-24h`, `0h-24h` | `{from: "22:00", to: "00:00"}`, `{from: "00:00", to: "00:00"}`: 24h là nửa đêm; `to` nhỏ hơn `from` là qua nửa đêm, bằng nhau là cả ngày |
 | `Ô tô`, `Xe tải`, `Xe khách`, `Xe con` | `vehicles.include` |
 | `Trừ xe buýt`, `Ngoại trừ …` | `vehicles.exclude` |
 | `Cách 200 m` | `distanceAheadM: 200` |
@@ -234,7 +235,7 @@ stateDiagram-v2
 
 Cụm `CONFLICT` giữ nguyên trạng thái cho tới khi quản trị viên chốt mã hoặc loại cụm, kể cả khi bằng chứng sau đó nghiêng hẳn về một mã.
 
-**Quan sát âm** được tạo trên thiết bị, không cần gửi lộ trình: app biết các cụm đã tải trước; khi xe đến gần trong 20 m một cụm cùng chiều đi, ở phía trước, rồi ra xa quá 50 m mà camera không xác nhận biển cùng mã trong 30 giây, app gửi quan sát âm kèm mã cụm. Biển dựng cho chiều ngược lại không được xét vì camera không nhìn thấy mặt biển. Việc đã đi qua được xét theo khoảng cách chứ không theo hướng, vì xe đứng yên thì GPS không có hướng.
+**Quan sát âm** được tạo trên thiết bị, không cần gửi lộ trình: app biết các cụm đã tải trước; khi xe đến gần trong 20 m một cụm cùng chiều đi, ở phía trước, rồi ra xa quá 50 m mà camera không xác nhận biển cùng mã trong 30 giây, app gửi quan sát âm kèm mã cụm. Biển dựng cho chiều ngược lại không được xét vì camera không nhìn thấy mặt biển. Việc đã đi qua được xét theo khoảng cách chứ không theo hướng, vì xe đứng yên thì GPS không có hướng. Một lượt đi qua là một quan sát âm đã được server xử lý; mỗi người được tính một lượt mỗi 12 giờ cho một cụm, như quan sát dương. Lô quan sát âm mới tạo mà chưa hoàn tất chưa được tính.
 
 **Cập nhật uy tín** khi quản trị viên giải quyết một cụm: người có quan sát đúng `r += 0,05`, người có quan sát sai `r −= 0,1`, giới hạn trong [0,5; 1,5].
 

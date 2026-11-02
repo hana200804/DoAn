@@ -100,8 +100,17 @@ def _fresh(out: Path) -> None:
 
 
 def _flat(row: dict) -> Path:
-    """Tên file đầu ra duy nhất: đường dẫn tương đối trong manifest, '/' thành '__'."""
-    return Path(row["path"].replace("/", "__"))
+    """Tên file đầu ra: hash đường dẫn tương đối (duy nhất) kèm tên gốc để dễ đọc."""
+    rel = row["path"]
+    return Path(f"{hashlib.sha1(rel.encode('utf-8')).hexdigest()[:16]}_{Path(rel).name}")
+
+
+def _new_file(path: Path) -> Path:
+    # Thư mục đầu ra đã được kiểm tra là rỗng, nên file đã tồn tại nghĩa là hai nguồn trùng tên
+    if path.exists():
+        raise FileExistsError(f"Hai ảnh nguồn cho ra cùng file {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def build_detector_dataset(root: Path, manifest: Path, out: Path, lm: LabelMap) -> Path:
@@ -112,7 +121,7 @@ def build_detector_dataset(root: Path, manifest: Path, out: Path, lm: LabelMap) 
         split = "val" if row["split"] == "test" else row["split"]
         if row["split"] == "test":
             continue  # tập test chỉ dùng cho đánh giá cuối, không đưa vào huấn luyện
-        dst_img = out / split / "images" / _flat(row)
+        dst_img = _new_file(out / split / "images" / _flat(row))
         dst_lbl = out / split / "labels" / _flat(row).with_suffix(".txt")
         dst_img.parent.mkdir(parents=True, exist_ok=True)
         dst_lbl.parent.mkdir(parents=True, exist_ok=True)
@@ -156,7 +165,7 @@ def build_classifier_dataset(root: Path, manifest: Path, out: Path, lm: LabelMap
             x1, y1 = min(w, int(cx + bw / 2)), min(h, int(cy + bh / 2))
             if x1 - x0 < 8 or y1 - y0 < 8:
                 continue
-            dst = out / row["split"] / lm.code_names[int(cls)] / f"{_flat(row).stem}_{i}.jpg"
+            dst = _new_file(out / row["split"] / lm.code_names[int(cls)] / f"{_flat(row).stem}_{i}.jpg")
             dst.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(dst), img[y0:y1, x0:x1])
     return out
