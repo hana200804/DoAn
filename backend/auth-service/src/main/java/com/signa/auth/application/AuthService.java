@@ -12,9 +12,11 @@ import com.signa.common.ratelimit.RateLimiter;
 import com.signa.common.security.Role;
 import com.signa.common.security.SessionStore;
 import com.signa.common.security.VehicleType;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Locale;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,12 +54,17 @@ public class AuthService {
 
   @Transactional
   public UserView register(String email, String password, String displayName) {
+    validateNewPassword("password", password);
     String normalized = normalize(email);
     if (users.existsByEmail(normalized)) {
       throw ApiException.conflict("Email đã được đăng ký");
     }
     User user = User.create(normalized, encoder.encode(password), displayName.trim(), Role.DRIVER);
-    users.save(user);
+    try {
+      users.saveAndFlush(user);
+    } catch (DataIntegrityViolationException e) {
+      throw ApiException.conflict("Email đã được đăng ký");
+    }
     return UserView.of(user);
   }
 
@@ -67,6 +74,7 @@ public class AuthService {
     // Đếm theo cả IP: người ngoài nhập sai liên tục không khoá được chủ tài khoản
     String limitKey = "login:" + normalized + ":" + clientIp;
     rateLimiter.check(limitKey, LOGIN_LIMIT, LOGIN_WINDOW);
+    if (tooLong(password)) throw ApiException.unauthenticated("Email hoặc mật khẩu không đúng");
     User user =
         users
             .findByEmail(normalized)
@@ -104,9 +112,10 @@ public class AuthService {
   public void changePassword(
       String userId, String currentSessionId, String oldPassword, String newPassword) {
     User user = load(userId);
-    if (!encoder.matches(oldPassword, user.getPasswordHash())) {
+    if (tooLong(oldPassword) || !encoder.matches(oldPassword, user.getPasswordHash())) {
       throw ApiException.validation("oldPassword", "mật khẩu cũ không đúng");
     }
+    validateNewPassword("newPassword", newPassword);
     user.changePassword(encoder.encode(newPassword));
     users.save(user);
     sessions.deleteAllForUser(userId, currentSessionId);
@@ -125,6 +134,7 @@ public class AuthService {
 
   @Transactional
   public void resetPassword(String email, String otp, String newPassword) {
+    validateNewPassword("newPassword", newPassword);
     String normalized = normalize(email);
     if (!otpStore.verify(normalized, otp)) {
       throw ApiException.validation("otp", "mã không đúng hoặc đã hết hạn");
@@ -146,5 +156,15 @@ public class AuthService {
 
   static String normalize(String email) {
     return email.trim().toLowerCase(Locale.ROOT);
+  }
+
+  private static boolean tooLong(String password) {
+    return password.getBytes(StandardCharsets.UTF_8).length > 72;
+  }
+
+  private static void validateNewPassword(String field, String password) {
+    if (password == null || password.isBlank() || password.length() < 8 || tooLong(password)) {
+      throw ApiException.validation(field, "cần ít nhất 8 ký tự và tối đa 72 byte UTF-8");
+    }
   }
 }

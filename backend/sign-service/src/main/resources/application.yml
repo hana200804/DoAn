@@ -21,6 +21,12 @@ spring:
     default-property-inclusion: non_null
 
 signa:
+  learning:
+    dataset-version: ${LABEL_DATASET_VERSION:v1.0}
+  ai:
+    enabled: ${AI_ENABLED:false}
+    target: ${AI_TARGET:localhost:9090}
+    timeout: ${AI_TIMEOUT:PT3S}
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
     # Địa chỉ điện thoại và trình duyệt dùng để tải ảnh qua presigned URL
@@ -28,6 +34,7 @@ signa:
     access-key: ${MINIO_ACCESS_KEY:signa}
     secret-key: ${MINIO_SECRET_KEY:signa-secret}
     bucket: ${MINIO_BUCKET:sign-crops}
+    model-bucket: ${MINIO_MODEL_BUCKET:models}
 
 management:
   endpoints:

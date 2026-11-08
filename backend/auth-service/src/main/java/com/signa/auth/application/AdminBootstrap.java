@@ -37,8 +37,10 @@ public class AdminBootstrap implements ApplicationRunner {
     if (users.existsByEmail(email)) {
       return;
     }
-    if (admin.password().length() < 12) {
-      log.warn("ADMIN_PASSWORD phải dài ít nhất 12 ký tự; bỏ qua việc tạo tài khoản quản trị");
+    if (admin.password().length() < 12
+        || admin.password().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72) {
+      log.warn(
+          "ADMIN_PASSWORD cần ít nhất 12 ký tự và tối đa 72 byte UTF-8; bỏ qua việc tạo tài khoản quản trị");
       return;
     }
     users.save(User.create(email, encoder.encode(admin.password()), "Quản trị viên", Role.ADMIN));

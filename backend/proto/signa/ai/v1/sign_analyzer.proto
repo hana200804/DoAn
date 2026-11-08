@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package signa.ai.v1;
+option java_multiple_files = true;
+option java_package = "com.signa.ai.v1";
+
+service SignAnalyzer {
+  rpc Reclassify(ReclassifyRequest) returns (ReclassifyResponse);
+  rpc ReadSubSign(ReadSubSignRequest) returns (ReadSubSignResponse);
+}
+
+message ImageRef {
+  string bucket = 1;
+  string object_key = 2;
+}
+message CodeProbability {
+  string code = 1;
+  float probability = 2;
+}
+message ReclassifyRequest {
+  string request_id = 1;
+  ImageRef crop = 2;
+  string detector_group = 3;
+  int32 label_map_version = 4;
+}
+message ReclassifyResponse {
+  repeated CodeProbability top_codes = 1;
+  string model_version = 2;
+}
+message ReadSubSignRequest {
+  string request_id = 1;
+  ImageRef crop = 2;
+}
+message TimeWindow {
+  string from = 1;
+  string to = 2;
+}
+message SubSignConditions {
+  repeated TimeWindow time_windows = 1;
+  repeated string include_vehicles = 2;
+  repeated string exclude_vehicles = 3;
+  optional int32 distance_ahead_m = 4;
+  optional int32 zone_length_m = 5;
+  optional float weight_limit_ton = 6;
+}
+message ReadSubSignResponse {
+  string raw_text = 1;
+  float ocr_confidence = 2;
+  bool parsed = 3;
+  SubSignConditions conditions = 4;
+}

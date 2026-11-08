@@ -20,7 +20,7 @@
 - Khoá chính dạng UUID lưu `CHAR(36)`, trừ bảng nhật ký dùng `BIGINT AUTO_INCREMENT`.
 - Thời gian lưu `DATETIME(3)` theo UTC.
 - Toạ độ lưu hai cột `lat`, `lng` (DOUBLE) với chỉ mục `(lat, lng)`; truy vấn vùng bằng `BETWEEN`, khoảng cách chính xác tính trong mã.
-- Migration trong `*/src/main/resources/db/migration` là nguồn chuẩn của lược đồ. Bảng `label_tasks` và `model_versions` thuộc #44, #45, chưa cài đặt.
+- Migration trong `*/src/main/resources/db/migration` là nguồn chuẩn của lược đồ. `V3__ai_review_and_models.sql` thêm hàng đợi AI, gán nhãn và phát hành mô hình.
 - Liên kết giữa hai CSDL chỉ qua ID (`user_id`), không có khoá ngoại chéo.
 
 ## 2. auth_db
@@ -250,14 +250,13 @@ erDiagram
 | --- | --- | --- | --- |
 | `id` | CHAR(36) | PK | |
 | `observation_id` | CHAR(36) | FK → `observations.id`, UNIQUE | |
-| `reason` | ENUM('LOW_CONF','MISMATCH','SPLIT_VOTE','CONFLICT','RANDOM') | NOT NULL | |
-| `status` | ENUM('OPEN','DONE','SKIPPED') | NOT NULL, INDEX | |
-| `suggested_code` | VARCHAR(20) | NULL | |
+| `reason` | VARCHAR(32) | NOT NULL | LOW_CONF, MISMATCH, SPLIT_VOTE, CONFLICT, RANDOM, OCR_UNPARSED, AI_UNAVAILABLE |
+| `status` | ENUM('OPEN','LABELED','SKIPPED') | NOT NULL, INDEX | |
 | `label_code` | VARCHAR(20) | NULL | Mã do quản trị viên chọn |
 | `label_box` | JSON | NULL | Box đã sửa trong ảnh cắt |
-| `labeled_by` | CHAR(36) | NULL | |
-| `labeled_at` | DATETIME(3) | NULL | |
-| `dataset_version` | VARCHAR(10) | NULL | Phiên bản dữ liệu đưa nhãn này vào |
+| `ocr_text`, `conditions` | TEXT, JSON | NULL | Chữ và điều kiện biển phụ đã duyệt tay |
+| `resolved_by` | CHAR(36) | NULL | |
+| `resolved_at` | DATETIME(3) | NULL | |
 | `created_at` | DATETIME(3) | NOT NULL | |
 
 ### model_versions
@@ -268,11 +267,18 @@ erDiagram
 | `label_map_version` | INT | NOT NULL | |
 | `detector_key`, `classifier_key` | VARCHAR(255) | NOT NULL | Khoá file trên MinIO |
 | `detector_sha256`, `classifier_sha256` | CHAR(64) | NOT NULL | |
-| `size_bytes` | BIGINT | NOT NULL | |
-| `metrics` | JSON | NOT NULL | Chỉ số trong thẻ mô hình |
-| `min_app_version` | VARCHAR(20) | NOT NULL | |
-| `status` | ENUM('DRAFT','ACTIVE','RETIRED') | NOT NULL | Chỉ một phiên bản `ACTIVE` cho mỗi label map |
-| `released_at` | DATETIME(3) | NULL | |
+| `detector_size`, `classifier_size` | BIGINT | NOT NULL | Kích thước từng file |
+| `min_app_version` | VARCHAR(32) | NOT NULL | major[.minor[.patch]] |
+| `created_by`, `created_at` | CHAR(36), DATETIME(3) | NOT NULL | Người đăng ký và thời điểm |
+
+### Hàng đợi AI và con trỏ phát hành
+
+- `observation_analysis`: khoá chính `observation_id` (FK), `status` (`PENDING`, `PROCESSING`, `RETRY`, `DONE`, `FAILED`), `attempts`, `generation`, `available_at`, `result` JSON và `updated_at`. Trạng thái `PROCESSING` hết lease được worker khác nhận lại; cặp generation/số lần thử ngăn kết quả cũ ghi đè kết quả mới, kể cả sau khi quản trị viên yêu cầu chạy lại.
+- `V4__sub_sign_review_and_freshness.sql` thêm `observations.has_sub_sign`, giữ thông tin có biển phụ ngay cả khi ảnh phụ chưa tải được. API cụm trả `hasSubSign` dựa trên các quan sát này.
+- `sign_clusters.conditions_confidence`, `conditions_observed_at`, `conditions_observation_id`: ghi nguồn gốc điều kiện OCR. Ảnh mới hơn được ưu tiên khi đạt ngưỡng 0,8; cùng thời điểm thì so confidence và ID để kết quả ổn định. Ảnh cũ đến muộn không ghi đè kết quả mới.
+- `sign_clusters.conditions_reviewed`: điều kiện đã duyệt tay; worker AI không ghi đè. Khi mã cụm đổi, toàn bộ điều kiện và metadata liên quan được xóa để tránh áp nhầm điều kiện của mã cũ.
+- `model_release`: sau V5 mỗi `label_map_version` có một dòng, `version` FK tới `model_versions`, `activated_by`, `activated_at`. Dòng này là con trỏ phát hành duy nhất, gồm cả quay lui.
+- `cluster_ingestion_lock`: một dòng `id=1` để tuần tự hoá đoạn gom cụm trong MySQL giữa các replica. Lời gọi S3/AI không giữ khoá này.
 
 ## 4. Khoá Redis
 
@@ -302,3 +308,7 @@ Khi gom cụm, sign-service lấy các cụm trong ô vuông quanh điểm quan 
 - Tên file: `V<số>__<mo_ta_ngan>.sql`, ví dụ `V3__add_cluster_conditions.sql`.
 - Không sửa migration đã merge vào `dev`; sai thì viết migration mới.
 - Dữ liệu khởi tạo `sign_types` sinh từ `ai/data/labels.yaml` thành migration `R__seed_sign_types.sql`.
+
+## Migration V5 · Đối chiếu vòng dữ liệu
+
+`label_tasks` có `dataset_version VARCHAR(10)` và `ocr_status` (`NOT_REQUIRED/PENDING/REVIEWED/SKIPPED`); nhãn chính được duyệt độc lập với OCR. `model_versions` có `status` (`DRAFT/ACTIVE/RETIRED`), `metrics JSON NOT NULL`, `released_at`; `model_release` khoá chính `label_map_version`. Model cũ thiếu thẻ được đưa về DRAFT khi nâng cấp, không tự nhận đạt tiêu chí phát hành.

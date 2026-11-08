@@ -128,7 +128,7 @@ sequenceDiagram
     Sign->>Sign: gán quan sát vào cụm, cập nhật điểm tin cậy
     Sign-->>App: 202
     opt độ tin cậy thấp hoặc có biển phụ
-        Sign->>AI: Reclassify / ReadSubSign (chưa cài, #42)
+        Sign->>AI: Reclassify / ReadSubSign (worker MySQL, có lease và retry)
         AI-->>Sign: mã biển / điều kiện biển phụ
     end
     opt cụm mâu thuẫn hoặc ảnh khó

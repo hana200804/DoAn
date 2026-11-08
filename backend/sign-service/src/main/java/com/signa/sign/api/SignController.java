@@ -16,9 +16,11 @@ import com.signa.sign.store.CropStorage;
 import com.signa.sign.store.SignRepository;
 import com.signa.sign.store.SignRepository.SignType;
 import jakarta.validation.Valid;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,7 +35,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class SignController {
 
   private static final double MAX_BOX_DEG = 0.5;
-  private static final int MAX_RESULTS = 500;
 
   private final SignRepository repo;
   private final CropStorage storage;
@@ -56,23 +57,45 @@ public class SignController {
       @RequestParam String bbox,
       @RequestParam(defaultValue = "0") double minConfidence,
       @RequestParam(required = false) Set<String> groups,
-      @RequestParam(defaultValue = "false") boolean includeCandidates) {
+      @RequestParam(defaultValue = "false") boolean includeCandidates,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "100") int size) {
+    if (!Double.isFinite(minConfidence) || minConfidence < 0 || minConfidence > 1) {
+      throw ApiException.validation("minConfidence", "phải nằm trong [0, 1]");
+    }
+    if (page < 0 || page > 100000 || size < 1 || size > 100) {
+      throw ApiException.validation("page", "page từ 0, size từ 1 đến 100");
+    }
+    if (groups != null
+        && (groups.isEmpty()
+            || !Set.of("PROHIBITORY", "MANDATORY", "WARNING", "AUXILIARY", "OTHER")
+                .containsAll(groups))) {
+      throw ApiException.validation("groups", "nhóm biển không hợp lệ");
+    }
     double[] b = parseBbox(bbox);
     List<String> statuses =
         includeCandidates
             ? List.of(ClusterStatus.VERIFIED.name(), ClusterStatus.CANDIDATE.name())
             : List.of(ClusterStatus.VERIFIED.name());
-    return Page.of(
-        repo.clustersInBox(b[1], b[0], b[3], b[2], statuses, MAX_RESULTS).stream()
-            .filter(c -> c.confidence() >= minConfidence)
-            .filter(c -> groups == null || groups.contains(c.group()))
+    return new Page<>(
+        repo.mapPage(b, statuses, groups, minConfidence, page, size).stream()
             .map(c -> SignView.of(c, null))
-            .toList());
+            .toList(),
+        page,
+        size,
+        repo.mapCount(b, statuses, groups, minConfidence));
   }
 
   /** Cụm biển đã xác minh dọc một tuyến, để app tải trước (FR-04, FR-09). */
   @PostMapping("/signs/corridor")
-  public Page<SignView> corridor(@Valid @RequestBody CorridorRequest req) {
+  @Transactional(readOnly = true)
+  public Page<SignView> corridor(
+      @Valid @RequestBody CorridorRequest req,
+      @RequestParam(defaultValue = "0") int page,
+      @RequestParam(defaultValue = "100") int size) {
+    if (page < 0 || page > 100000 || size < 1 || size > 100) {
+      throw ApiException.validation("page", "page từ 0, size từ 1 đến 100");
+    }
     List<LatLng> line = req.polyline();
     double minLat = line.stream().mapToDouble(LatLng::lat).min().orElseThrow();
     double maxLat = line.stream().mapToDouble(LatLng::lat).max().orElseThrow();
@@ -80,19 +103,29 @@ public class SignController {
     double maxLng = line.stream().mapToDouble(LatLng::lng).max().orElseThrow();
     double padLat = Geo.metersToLatDeg(req.widthM());
     double padLng = Geo.metersToLngDeg(req.widthM(), minLat);
-    return Page.of(
-        repo
-            .clustersInBox(
-                minLat - padLat,
-                minLng - padLng,
-                maxLat + padLat,
-                maxLng + padLng,
-                List.of(ClusterStatus.VERIFIED.name()),
-                5000)
-            .stream()
-            .filter(c -> Geo.distanceToPolylineM(c.lat(), c.lng(), line) <= req.widthM() / 2)
-            .map(c -> SignView.of(c, null))
-            .toList());
+    double[] bbox = {
+      Math.max(-180, minLng - padLng),
+      Math.max(-90, minLat - padLat),
+      Math.min(180, maxLng + padLng),
+      Math.min(90, maxLat + padLat)
+    };
+    List<SignView> items = new ArrayList<>();
+    String after = "";
+    long total = 0;
+    long offset = (long) page * size;
+    while (true) {
+      var candidates = repo.corridorCandidates(bbox, after, 512);
+      if (candidates.isEmpty()) break;
+      for (var c : candidates) {
+        if (Geo.distanceToPolylineM(c.lat(), c.lng(), line) <= req.widthM() / 2) {
+          if (total >= offset && items.size() < size) items.add(SignView.of(c, null));
+          total++;
+        }
+      }
+      after = candidates.getLast().id();
+      if (candidates.size() < 512) break;
+    }
+    return new Page<>(items, page, size, total);
   }
 
   @GetMapping("/signs/{id}")
@@ -113,7 +146,7 @@ public class SignController {
   }
 
   static double[] parseBbox(String bbox) {
-    String[] parts = bbox.split(",");
+    String[] parts = bbox.split(",", -1);
     if (parts.length != 4) {
       throw ApiException.validation("bbox", "định dạng minLng,minLat,maxLng,maxLat");
     }
@@ -125,7 +158,15 @@ public class SignController {
     } catch (NumberFormatException e) {
       throw ApiException.validation("bbox", "phải là số");
     }
-    if (b[0] >= b[2] || b[1] >= b[3] || b[2] - b[0] > MAX_BOX_DEG || b[3] - b[1] > MAX_BOX_DEG) {
+    if (java.util.Arrays.stream(b).anyMatch(v -> !Double.isFinite(v))
+        || b[0] < -180
+        || b[2] > 180
+        || b[1] < -90
+        || b[3] > 90
+        || b[0] >= b[2]
+        || b[1] >= b[3]
+        || b[2] - b[0] > MAX_BOX_DEG
+        || b[3] - b[1] > MAX_BOX_DEG) {
       throw ApiException.validation(
           "bbox", "vùng không hợp lệ hoặc rộng quá " + MAX_BOX_DEG + " độ");
     }

@@ -52,7 +52,7 @@ public class GlobalExceptionHandler {
     MissingRequestHeaderException.class
   })
   ResponseEntity<ApiError> handleBadRequest(Exception ex) {
-    return build(ErrorCode.VALIDATION_ERROR, "Request không hợp lệ: " + ex.getMessage(), List.of());
+    return build(ErrorCode.VALIDATION_ERROR, "Request không hợp lệ", List.of());
   }
 
   @ExceptionHandler(NoResourceFoundException.class)

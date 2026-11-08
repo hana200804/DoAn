@@ -5,6 +5,8 @@ plugins {
 
 dependencies {
     implementation(project(":common"))
+    implementation(project(":ai-client"))
+    implementation(libs.grpc.netty.shaded)
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-mysql")
@@ -15,4 +17,5 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:mysql")
+    testImplementation(libs.grpc.inprocess)
 }

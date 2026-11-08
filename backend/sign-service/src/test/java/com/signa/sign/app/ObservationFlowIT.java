@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.signa.common.error.ApiException;
 import com.signa.common.geo.LatLng;
+import com.signa.sign.SignDatabaseIT;
 import com.signa.sign.api.SignDtos.CodeProb;
 import com.signa.sign.api.SignDtos.CreateBatchRequest;
 import com.signa.sign.api.SignDtos.Kind;
@@ -32,19 +33,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** IT-B01 → IT-B03: luồng gửi quan sát trên MySQL thật. Chạy bằng {@code -Pintegration}. */
 @Tag("integration")
 @SpringBootTest
-@Testcontainers
-class ObservationFlowIT {
-
-  @Container @ServiceConnection static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4");
+class ObservationFlowIT extends SignDatabaseIT {
 
   @MockBean CropStorage storage;
 
@@ -274,6 +268,60 @@ class ObservationFlowIT {
                 Map.of("c", cluster),
                 Integer.class))
         .isEqualTo(1);
+  }
+
+  @Test
+  void simultaneousFirstSightingsCreateOneCluster() throws Exception {
+    var a = observations.createBatch("first-a", UUID.randomUUID().toString(), batch(.95));
+    var b = observations.createBatch("first-b", UUID.randomUUID().toString(), batch(.95));
+    try (var pool = Executors.newFixedThreadPool(2)) {
+      var x = pool.submit(() -> observations.complete("first-a", a.batchId()));
+      var y = pool.submit(() -> observations.complete("first-b", b.batchId()));
+      x.get(20, TimeUnit.SECONDS);
+      y.get(20, TimeUnit.SECONDS);
+    }
+    assertThat(repo.observations(a.batchId()).get(0).clusterId())
+        .isEqualTo(repo.observations(b.batchId()).get(0).clusterId());
+  }
+
+  @Test
+  void negativePassDoesNotMoveLastSeenAt() {
+    String cluster = verifiedCluster();
+    Instant seenAt = repo.cluster(cluster).orElseThrow().lastSeenAt();
+    var negative =
+        observations.createBatch("negative", UUID.randomUUID().toString(), negativeBatch(cluster));
+    observations.complete("negative", negative.batchId());
+    assertThat(repo.cluster(cluster).orElseThrow().lastSeenAt()).isEqualTo(seenAt);
+  }
+
+  @Test
+  void mixedBatchAcceptsTheFixCapturedNearTheSignBeforeDrivingSixtyMetersAway() {
+    String cluster = verifiedCluster();
+    var near = new LatLng(lat, lng + com.signa.sign.domain.Geo.metersToLngDeg(10, lat));
+    var negative =
+        new ObservationIn(
+            "near-pass",
+            Kind.NEGATIVE,
+            null,
+            cluster,
+            null,
+            null,
+            null,
+            near,
+            90,
+            null,
+            null,
+            false,
+            Instant.now());
+    var positive = batch(.95).observations().get(0);
+    var res =
+        observations.createBatch(
+            "mixed-pass",
+            UUID.randomUUID().toString(),
+            new CreateBatchRequest("model-v1", 1, "test", List.of(positive, negative)));
+    observations.complete("mixed-pass", res.batchId());
+    assertThat(repo.observations(res.batchId())).hasSize(2);
+    assertThat(repo.batch(res.batchId()).orElseThrow().status()).isEqualTo("PROCESSED");
   }
 
   private String verifiedCluster() {

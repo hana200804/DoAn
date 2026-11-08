@@ -36,7 +36,7 @@ Các microservice nghiệp vụ viết bằng Java Spring Boot: xác thực, b�
 | Dữ liệu | MySQL 8, Flyway; Spring Data JPA (auth-service), JdbcTemplate (sign-service) |
 | Cache / phiên | Redis |
 | Lưu ảnh | Kho S3 (RustFS khi chạy bằng `infra/`), client MinIO Java |
-| Giao tiếp nội bộ | gRPC tới ai-service, Protobuf trong `backend/proto/` (chưa cài, #42) |
+| Giao tiếp nội bộ | gRPC tới ai-service, Protobuf trong `backend/proto/`, sinh Java qua module `ai-client` |
 | Xử lý quan sát | Đồng bộ trong request `complete`; chuyển sang Redis Stream khi tải vượt NFR-12 |
 | Quan sát | Spring Boot Actuator, log JSON |
 
@@ -72,7 +72,8 @@ backend/
 ├── sign-service/
 │   └── src/main/java/com/signa/sign/
 │       ├── api/       # controller, DTO
-│       ├── app/       # ObservationService (gom cụm), ReviewService (mâu thuẫn, báo cáo)
+│       ├── app/       # Quan sát, duyệt, gán nhãn và phát hành mô hình
+│       ├── ai/        # Client gRPC, worker hàng đợi có lease và retry
 │       ├── domain/    # ClusterRules (điểm tin cậy Beta), Geo — Java thuần, có test
 │       └── store/     # SignRepository (JdbcTemplate), CropStorage (S3)
 ├── Dockerfile         # dùng chung: --build-arg SERVICE=<tên service>
@@ -115,6 +116,9 @@ Swagger UI có trong từng service (`/swagger-ui.html`) nhưng nginx không cô
 | `MINIO_ENDPOINT`, `MINIO_PUBLIC_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET` | sign | Kho ảnh S3 (RustFS/MinIO); địa chỉ công khai dùng để ký presigned URL |
 | `VIETMAP_API_KEY`, `VIETMAP_BASE_URL` | map | VietMap |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | auth | SMTP gửi OTP (Compose chuyển thành `SPRING_MAIL_*`); host trống thì chỉ ghi log |
+| `AI_ENABLED`, `AI_TARGET`, `AI_TIMEOUT` | sign | Bật worker AI (mặc định `false`); đích gRPC (mặc định `localhost:9090`); hạn chót mỗi RPC (mặc định `PT3S`) |
+| `MINIO_MODEL_BUCKET` | sign | Bucket chứa artifact mô hình, mặc định `models` |
+| `LABEL_DATASET_VERSION` | sign | Phiên bản dữ liệu đích mặc định khi duyệt nhãn, mặc định `v1.0` |
 
 ## Kiểm thử
 
@@ -124,9 +128,39 @@ Swagger UI có trong từng service (`/swagger-ui.html`) nhưng nginx không cô
 | Tích hợp (MySQL, Redis thật) | Testcontainers, cần Docker | `./gradlew test -Pintegration` |
 | Định dạng mã | Spotless, google-java-format | `./gradlew spotlessCheck` (sửa: `spotlessApply`) |
 
+Riêng test tích hợp sign-service có thể dùng một CSDL MySQL 8 **riêng cho kiểm thử** khi không có Docker:
+
+```bash
+SIGNA_TEST_DB_URL='jdbc:mysql://localhost:3306/signa_test' \
+SIGNA_TEST_DB_USER=root SIGNA_TEST_DB_PASSWORD=your-test-password \
+./gradlew :sign-service:test -Pintegration --no-daemon
+```
+
+Flyway tạo lược đồ và test ghi dữ liệu vào CSDL này. Khi không đặt `SIGNA_TEST_DB_URL`, test tự chạy MySQL bằng Testcontainers.
+
+## Xử lý AI và phát hành mô hình
+
+Phần back-end cung cấp client Java và hợp đồng gRPC; dịch vụ inference Python và trọng số được bàn giao riêng. Worker mặc định tắt (`AI_ENABLED=false`). Khi bật worker, cần đặt `AI_TARGET` tới dịch vụ triển khai đúng hợp đồng trong `backend/proto/`. Các job đã lưu chờ worker xử lý.
+
+- `complete` gom cụm trong transaction; một khoá MySQL ngăn hai lô đồng thời tạo hai cụm cho cùng biển. Kiểm tra S3 diễn ra trước khoá này.
+- Ảnh có `LOW_CONF`, `SPLIT_VOTE`, `MISMATCH` tạo tác vụ gán nhãn; ảnh có biển phụ và ảnh khó tạo job trong `observation_analysis`.
+- Worker gọi AI ngoài transaction, giữ lease 60 giây, retry tối đa 5 lần với thời gian chờ tăng dần. Kết quả phân loại lại là gợi ý duyệt, không tự thay quyết định của quản trị viên.
+- OCR đủ tin cậy (≥ 0,8) cập nhật theo thời điểm quan sát, không giữ lịch cũ chỉ vì confidence cao hơn. Kết quả từ ảnh cũ đến muộn, quan sát không có trọng số hoặc khác mã cụm không được áp dụng. Điều kiện đã duyệt tay được bảo vệ khỏi AI ghi đè.
+- Tác vụ trả cả ảnh biển chính và ảnh biển phụ. API `/admin/label-tasks/{id}/ocr` lưu chữ và điều kiện đã duyệt; tác vụ ảnh khó yêu cầu chốt thêm nhãn biển chính.
+- API quản trị gán nhãn, đăng ký/kích hoạt/quay lui mô hình và thống kê đã có trong [đặc tả API](../docs/07-api.md). Đăng ký và kích hoạt đều kiểm tra SHA-256 và kích thước file thật trong S3.
+- File phát hành đặt trong bucket riêng `MINIO_MODEL_BUCKET` (mặc định `models`); file ONNX phục vụ server gắn riêng vào container AI. Repository chưa có trọng số huấn luyện hay số liệu chất lượng thực địa.
+
 ## Tài liệu liên quan
 
 - [Kiến trúc hệ thống](../docs/03-kien-truc.md)
 - [Thiết kế cơ sở dữ liệu](../docs/06-co-so-du-lieu.md)
 - [Đặc tả API](../docs/07-api.md)
 - [ADR-0004: Điểm tin cậy thay cho luật 20 m](../docs/adr/0004-diem-tin-cay-ban-do.md)
+
+## Đối chiếu yêu cầu back-end
+
+Xem [phạm vi, đối chiếu yêu cầu và nhật ký bàn giao back-end](IMPLEMENTATION.md). `LABEL_DATASET_VERSION` đặt phiên bản dữ liệu đích mặc định cho nhãn; request có thể chỉ định `datasetVersion`. Tác vụ có biển phụ giữ OPEN sau khi gán nhãn chính cho đến khi duyệt OCR hoặc bỏ qua. Export dataset trả ảnh, nhãn và SHA-256 qua API quản trị.
+
+Model có trạng thái DRAFT/ACTIVE/RETIRED, thẻ số liệu bắt buộc khi đăng ký. Kích hoạt kiểm tra ngưỡng thiết kế và so với bản đang dùng; bản RETIRED có thể quay lui. Các model cũ thiếu thẻ sau migration V5 trở lại DRAFT; bổ sung thẻ thật qua API rồi mới kích hoạt lại.
+
+Test Redis có thể chạy trên một instance **riêng cho kiểm thử** khi không có Docker: đặt `SIGNA_TEST_REDIS_HOST=127.0.0.1` và `SIGNA_TEST_REDIS_PORT=<cổng test>` rồi chạy `./gradlew test -Pintegration` cùng cấu hình MySQL ở trên. CI không đặt các biến này nên vẫn dùng Testcontainers Redis 7.4. Không trỏ test vào Redis đang dùng cho tài khoản thật.

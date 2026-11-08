@@ -13,12 +13,15 @@ import com.signa.sign.domain.ClusterRules.Candidate;
 import com.signa.sign.domain.ClusterRules.Evidence;
 import com.signa.sign.domain.ClusterStatus;
 import com.signa.sign.domain.Geo;
+import com.signa.sign.domain.ReviewSampling;
 import com.signa.sign.store.CropStorage;
+import com.signa.sign.store.LearningRepository;
 import com.signa.sign.store.SignRepository;
 import com.signa.sign.store.SignRepository.ClusterFacts;
 import com.signa.sign.store.SignRepository.Observation;
 import com.signa.sign.store.SignRepository.SignType;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,10 +43,18 @@ public class ObservationService {
 
   private final SignRepository repo;
   private final CropStorage storage;
+  private final LearningRepository learning;
+  private final ReviewSampling sampling;
 
-  public ObservationService(SignRepository repo, CropStorage storage) {
+  public ObservationService(
+      SignRepository repo,
+      CropStorage storage,
+      LearningRepository learning,
+      ReviewSampling sampling) {
     this.repo = repo;
     this.storage = storage;
+    this.learning = learning;
+    this.sampling = sampling;
   }
 
   @Transactional
@@ -52,6 +63,9 @@ public class ObservationService {
     Optional<String> existing = repo.batchId(userId, idempotencyKey);
     if (existing.isPresent()) {
       return new CreateBatchResponse(existing.get(), uploadsFor(repo.observations(existing.get())));
+    }
+    if (!repo.supportsLabelMap(req.labelMapVersion())) {
+      throw ApiException.businessRule("Phiên bản label map chưa được server hỗ trợ");
     }
     String batchId = UUID.randomUUID().toString();
     try {
@@ -67,7 +81,11 @@ public class ObservationService {
       throw ApiException.conflict("Lô quan sát đang được tạo, hãy gửi lại");
     }
     List<Observation> saved = new ArrayList<>();
+    var clients = new HashSet<String>();
     for (int i = 0; i < req.observations().size(); i++) {
+      if (!clients.add(req.observations().get(i).clientId())) {
+        throw ApiException.validation("observations[" + i + "].clientId", "trùng trong cùng lô");
+      }
       Observation o =
           toObservation(batchId, userId, req.observations().get(i), "observations[" + i + "]");
       if (o == null) {
@@ -80,8 +98,6 @@ public class ObservationService {
   }
 
   /** Xác nhận ảnh đã tải lên rồi gom cụm toàn bộ lô. Gọi lại với lô đã xử lý thì không làm gì. */
-  // shortcut: xử lý đồng bộ trong request, hai lô gần cùng một biển xử lý cùng lúc có thể tạo hai
-  // cụm; chuyển sang một worker đọc hàng đợi (Redis Stream) khi tải vượt NFR-12
   // READ COMMITTED: sau khi khoá dòng cụm phải đọc được quyết định quản trị viên vừa commit, không
   // đọc snapshot cũ từ đầu transaction
   @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -94,18 +110,42 @@ public class ObservationService {
     if (!repo.claimBatch(batchId)) {
       return; // đã hoặc đang được xử lý bởi request khác
     }
-    for (Observation o : repo.observations(batchId)) {
-      String crop = o.cropKey() != null && storage.exists(o.cropKey()) ? o.cropKey() : null;
-      String sub = o.subSignKey() != null && storage.exists(o.subSignKey()) ? o.subSignKey() : null;
+    var observations = repo.observations(batchId);
+    var crops = new java.util.HashMap<String, String>();
+    var subs = new java.util.HashMap<String, String>();
+    for (Observation o : observations) {
+      if (o.cropKey() != null && storage.exists(o.cropKey())) crops.put(o.id(), o.cropKey());
+      if (o.subSignKey() != null && storage.exists(o.subSignKey()))
+        subs.put(o.id(), o.subSignKey());
+    }
+    // The short database-only section is serialized; S3 and AI calls never hold this lock.
+    repo.lockIngestion();
+    for (Observation o : observations) {
+      String crop = crops.get(o.id());
+      String sub = subs.get(o.id());
       if (Kind.POSITIVE.name().equals(o.kind())) {
-        processPositive(o, crop, sub);
+        boolean conflict = processPositive(o, crop, sub) == ClusterStatus.CONFLICT;
+        boolean hard = o.flags() != null && !o.flags().equals("[]");
+        if (crop != null && (hard || conflict)) {
+          if (conflict) repo.addObservationFlag(o.id(), "CONFLICT");
+          learning.labelTask(
+              o.id(),
+              !hard
+                  ? "CONFLICT"
+                  : o.flags().contains("LOW_CONF")
+                      ? "LOW_CONF"
+                      : o.flags().contains("SPLIT_VOTE") ? "SPLIT_VOTE" : "MISMATCH");
+        } else if (crop != null && sampling.select(o.id())) {
+          learning.labelTask(o.id(), "RANDOM");
+        }
+        if ((crop != null && (hard || conflict)) || sub != null) learning.enqueue(o.id());
       } else {
         processNegative(o);
       }
     }
   }
 
-  private void processPositive(Observation o, String crop, String sub) {
+  private ClusterStatus processPositive(Observation o, String crop, String sub) {
     String group = repo.signType(o.signCode()).orElseThrow().group();
     List<Candidate> candidates =
         repo.candidatesNear(o.lat(), o.lng(), ClusterRules.MATCH_RADIUS_M + 5);
@@ -133,7 +173,7 @@ public class ObservationService {
                 * repo.reputation(o.userId());
     repo.addCodeWeight(clusterId, o.signCode(), weight);
     repo.assignObservation(o.id(), clusterId, weight, crop, sub);
-    reassess(clusterId, o);
+    return reassess(clusterId, o);
   }
 
   private void processNegative(Observation o) {
@@ -151,7 +191,7 @@ public class ObservationService {
     reassess(o.clusterId(), o);
   }
 
-  private void reassess(String clusterId, Observation trigger) {
+  private ClusterStatus reassess(String clusterId, Observation trigger) {
     Map<String, Double> weights = repo.codeWeights(clusterId);
     ClusterFacts facts = repo.facts(clusterId);
     Assessment a =
@@ -184,18 +224,32 @@ public class ObservationService {
         lat,
         lng,
         facts.distinctUsers(),
-        trigger.observedAt());
+        trigger.observedAt(),
+        Kind.POSITIVE.name().equals(trigger.kind()));
     if (a.status() != facts.status()) {
       repo.event(clusterId, null, "STATUS_CHANGED", facts.status().name(), a.status().name(), null);
     }
+    return a.status();
   }
 
   /** Null nếu quan sát dương có mã biển không dùng được. */
   private Observation toObservation(String batchId, String userId, ObservationIn in, String field) {
     String id = UUID.randomUUID().toString();
+    if (in.observedAt().isAfter(java.time.Instant.now().plusSeconds(300))) {
+      throw ApiException.validation(field + ".observedAt", "không được ở tương lai quá 5 phút");
+    }
     if (in.kind() == Kind.NEGATIVE) {
       if (in.clusterId() == null) {
         throw ApiException.validation(field + ".clusterId", "bắt buộc với quan sát âm");
+      }
+      var cluster =
+          repo.cluster(in.clusterId())
+              .orElseThrow(
+                  () -> ApiException.validation(field + ".clusterId", "không có cụm biển này"));
+      if (Geo.distanceM(in.location().lat(), in.location().lng(), cluster.lat(), cluster.lng()) > 50
+          || Geo.headingDiff(in.headingDeg(), cluster.headingDeg()) > 30) {
+        throw ApiException.validation(
+            field + ".clusterId", "quan sát âm phải gần biển và cùng hướng");
       }
       return new Observation(
           id,
@@ -227,6 +281,19 @@ public class ObservationService {
       log.info("Bỏ {} vì mã biển {} không dùng được", field, in.signCode());
       return null;
     }
+    if (in.classProbs() != null) {
+      var codes = new HashSet<String>();
+      double sum = 0;
+      for (CodeProb prob : in.classProbs()) {
+        if (!codes.add(prob.code()) || !Double.isFinite(prob.p())) {
+          throw ApiException.validation(
+              field + ".classProbs", "mã trùng hoặc xác suất không hợp lệ");
+        }
+        sum += prob.p();
+      }
+      if (sum > 1.0001)
+        throw ApiException.validation(field + ".classProbs", "tổng xác suất vượt 1");
+    }
     Double p =
         in.classProbs() == null
             ? null
@@ -236,7 +303,7 @@ public class ObservationService {
                 .findFirst()
                 .orElse(null);
     List<String> flags = new ArrayList<>();
-    if (p != null && p < 0.6) {
+    if (p == null || p < 0.6) {
       flags.add("\"LOW_CONF\"");
     }
     if (in.voteShare() != null && in.voteShare() < 0.6) {

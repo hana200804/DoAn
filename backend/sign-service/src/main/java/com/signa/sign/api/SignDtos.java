@@ -28,7 +28,8 @@ public final class SignDtos {
     NEGATIVE
   }
 
-  public record CodeProb(@NotBlank String code, @DecimalMin("0") @DecimalMax("1") double p) {}
+  public record CodeProb(
+      @NotBlank @Size(max = 20) String code, @DecimalMin("0") @DecimalMax("1") double p) {}
 
   public record ObservationIn(
       @NotBlank @Size(max = 64) String clientId,
@@ -36,7 +37,7 @@ public final class SignDtos {
       @Size(max = 20) String signCode,
       @Size(max = 36) String clusterId,
       @Size(max = 20) String detectorGroup,
-      @Size(max = 5) List<@Valid CodeProb> classProbs,
+      @Size(max = 5) List<@NotNull @Valid CodeProb> classProbs,
       @DecimalMin("0") @DecimalMax("1") Double voteShare,
       @NotNull @Valid LatLng location,
       @Min(0) @Max(359) int headingDeg,
@@ -49,7 +50,7 @@ public final class SignDtos {
       @NotBlank @Size(max = 20) String modelVersion,
       @Min(1) int labelMapVersion,
       @Size(max = 100) String deviceModel,
-      @NotEmpty @Size(max = 100) List<@Valid ObservationIn> observations) {}
+      @NotEmpty @Size(max = 100) List<@NotNull @Valid ObservationIn> observations) {}
 
   public record Upload(String clientId, String cropUploadUrl, String subSignUploadUrl) {}
 
@@ -67,7 +68,8 @@ public final class SignDtos {
       @JsonRawValue String conditions,
       int observationCount,
       Instant lastSeenAt,
-      String imageUrl) {
+      String imageUrl,
+      boolean hasSubSign) {
 
     public static SignView of(Cluster c, String imageUrl) {
       return new SignView(
@@ -82,7 +84,8 @@ public final class SignDtos {
           c.conditions(),
           c.observationCount(),
           c.lastSeenAt(),
-          imageUrl);
+          imageUrl,
+          c.hasSubSign());
     }
   }
 
@@ -93,7 +96,7 @@ public final class SignDtos {
   }
 
   public record CorridorRequest(
-      @NotEmpty @Size(max = 5000) List<@Valid LatLng> polyline,
+      @NotEmpty @Size(max = 5000) List<@NotNull @Valid LatLng> polyline,
       @DecimalMin("5") @DecimalMax("200") double widthM) {}
 
   public record ReportRequest(

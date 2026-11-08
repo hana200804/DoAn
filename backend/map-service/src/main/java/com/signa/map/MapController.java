@@ -7,6 +7,7 @@ import com.signa.map.VietMapClient.Place;
 import com.signa.map.VietMapClient.Route;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,11 +33,16 @@ public class MapController {
       @RequestParam @Size(min = 2, max = 200) String q,
       @RequestParam(required = false) Double lat,
       @RequestParam(required = false) Double lng) {
+    if ((lat == null) != (lng == null))
+      throw ApiException.validation("location", "cần cả lat và lng");
+    if (lat != null) validatePoint(lat, lng);
+    if (q.trim().length() < 2) throw ApiException.validation("q", "cần ít nhất 2 ký tự");
     return vietmap.search(q.trim(), lat, lng);
   }
 
   @GetMapping("/places/reverse")
   public Place reverse(@RequestParam double lat, @RequestParam double lng) {
+    validatePoint(lat, lng);
     return vietmap.reverse(lat, lng);
   }
 
@@ -50,6 +56,7 @@ public class MapController {
       @RequestParam String from,
       @RequestParam String to,
       @RequestParam(defaultValue = "car") String vehicle) {
+    vehicle = vehicle.toLowerCase(Locale.ROOT);
     if (!List.of("car", "truck", "bus").contains(vehicle)) {
       throw ApiException.validation("vehicle", "chỉ nhận car, truck, bus");
     }
@@ -57,15 +64,28 @@ public class MapController {
   }
 
   private static LatLng point(String field, String value) {
-    String[] p = value.split(",");
+    String[] p = value.split(",", -1);
     try {
       LatLng ll = new LatLng(Double.parseDouble(p[0]), Double.parseDouble(p[1]));
-      if (p.length != 2 || Math.abs(ll.lat()) > 90 || Math.abs(ll.lng()) > 180) {
+      if (p.length != 2
+          || !Double.isFinite(ll.lat())
+          || !Double.isFinite(ll.lng())
+          || Math.abs(ll.lat()) > 90
+          || Math.abs(ll.lng()) > 180) {
         throw new NumberFormatException();
       }
       return ll;
     } catch (RuntimeException e) {
       throw ApiException.validation(field, "định dạng lat,lng");
+    }
+  }
+
+  private static void validatePoint(double lat, double lng) {
+    if (!Double.isFinite(lat)
+        || !Double.isFinite(lng)
+        || Math.abs(lat) > 90
+        || Math.abs(lng) > 180) {
+      throw ApiException.validation("location", "toạ độ ngoài phạm vi WGS84");
     }
   }
 }

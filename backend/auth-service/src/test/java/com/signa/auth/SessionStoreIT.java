@@ -15,17 +15,10 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /** Phiên trên Redis thật: cập nhật hồ sơ không được tạo lại phiên vừa đăng xuất. */
 @Tag("integration")
-@Testcontainers
 class SessionStoreIT {
-
-  @Container
-  static GenericContainer<?> redis = new GenericContainer<>("redis:7.4").withExposedPorts(6379);
 
   // Giống cấu hình Jackson của Spring Boot: bỏ qua thuộc tính lạ (ví dụ "admin" từ isAdmin())
   static final ObjectMapper MAPPER =
@@ -36,8 +29,7 @@ class SessionStoreIT {
 
   @BeforeAll
   static void setUp() {
-    factory = new LettuceConnectionFactory(redis.getHost(), redis.getMappedPort(6379));
-    factory.afterPropertiesSet();
+    factory = RedisTestServer.connectionFactory();
   }
 
   @AfterAll

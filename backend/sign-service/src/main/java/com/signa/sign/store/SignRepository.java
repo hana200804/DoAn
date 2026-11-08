@@ -41,6 +41,14 @@ public class SignRepository {
     return jdbc.query("SELECT * FROM sign_types ORDER BY code", Map.of(), SignRepository::signType);
   }
 
+  public boolean supportsLabelMap(int version) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "SELECT EXISTS(SELECT 1 FROM sign_types WHERE label_map_version = :version AND active)",
+            Map.of("version", version),
+            Boolean.class));
+  }
+
   public Optional<SignType> signType(String code) {
     return jdbc
         .query(
@@ -94,11 +102,14 @@ public class SignRepository {
       String conditions,
       int observationCount,
       int distinctUsers,
-      Instant lastSeenAt) {}
+      Instant lastSeenAt,
+      boolean hasSubSign) {}
 
   private static final String CLUSTER_SELECT =
       """
-      SELECT c.*, t.group_code, t.name FROM sign_clusters c
+      SELECT c.*, t.group_code, t.name,
+        EXISTS(SELECT 1 FROM observations o WHERE o.cluster_id = c.id AND o.has_sub_sign AND o.weight > 0) AS has_sub_sign
+      FROM sign_clusters c
       JOIN sign_types t ON t.code = c.sign_code
       """;
 
@@ -113,7 +124,7 @@ public class SignRepository {
         CLUSTER_SELECT
             + """
             WHERE c.lat BETWEEN :minLat AND :maxLat AND c.lng BETWEEN :minLng AND :maxLng
-              AND c.status IN (:statuses)
+              AND c.status IN (:statuses) AND t.active
             ORDER BY c.confidence DESC LIMIT :limit
             """,
         new MapSqlParameterSource()
@@ -133,6 +144,62 @@ public class SignRepository {
         .findFirst();
   }
 
+  /** Stable, bounded scan; corridor filtering must run before result pagination. */
+  public List<Cluster> corridorCandidates(double[] bbox, String afterId, int limit) {
+    return jdbc.query(
+        CLUSTER_SELECT + mapWhere(null) + " AND c.id > :after ORDER BY c.id LIMIT :limit",
+        mapParams(bbox, List.of("VERIFIED"), null, 0)
+            .addValue("after", afterId)
+            .addValue("limit", limit),
+        SignRepository::cluster);
+  }
+
+  public List<Cluster> mapPage(
+      double[] bbox,
+      List<String> statuses,
+      java.util.Set<String> groups,
+      double minConfidence,
+      int page,
+      int size) {
+    return jdbc.query(
+        CLUSTER_SELECT
+            + mapWhere(groups)
+            + " ORDER BY c.confidence DESC, c.id LIMIT :size OFFSET :offset",
+        mapParams(bbox, statuses, groups, minConfidence)
+            .addValue("size", size)
+            .addValue("offset", page * size),
+        SignRepository::cluster);
+  }
+
+  public long mapCount(
+      double[] bbox, List<String> statuses, java.util.Set<String> groups, double minConfidence) {
+    return jdbc.queryForObject(
+        "SELECT COUNT(*) FROM sign_clusters c JOIN sign_types t ON t.code = c.sign_code"
+            + mapWhere(groups),
+        mapParams(bbox, statuses, groups, minConfidence),
+        Long.class);
+  }
+
+  private static String mapWhere(java.util.Set<String> groups) {
+    return """
+         WHERE c.lat BETWEEN :minLat AND :maxLat AND c.lng BETWEEN :minLng AND :maxLng
+           AND c.status IN (:statuses) AND c.confidence >= :confidence AND t.active
+        """
+        + (groups == null ? "" : " AND t.group_code IN (:groups)");
+  }
+
+  private static MapSqlParameterSource mapParams(
+      double[] b, List<String> statuses, java.util.Set<String> groups, double confidence) {
+    return new MapSqlParameterSource()
+        .addValue("minLat", b[1])
+        .addValue("maxLat", b[3])
+        .addValue("minLng", b[0])
+        .addValue("maxLng", b[2])
+        .addValue("statuses", statuses)
+        .addValue("confidence", confidence)
+        .addValue("groups", groups);
+  }
+
   public Optional<Cluster> clusterForUpdate(String id) {
     return jdbc
         .query(
@@ -147,6 +214,11 @@ public class SignRepository {
   public void lockCluster(String id) {
     jdbc.queryForList(
         "SELECT id FROM sign_clusters WHERE id = :id FOR UPDATE", Map.of("id", id), String.class);
+  }
+
+  public void lockIngestion() {
+    jdbc.queryForList(
+        "SELECT id FROM cluster_ingestion_lock WHERE id = 1 FOR UPDATE", Map.of(), Integer.class);
   }
 
   public List<Cluster> clustersByStatus(ClusterStatus status, int limit) {
@@ -284,13 +356,20 @@ public class SignRepository {
       double lat,
       double lng,
       int distinctUsers,
-      Instant seenAt) {
+      Instant seenAt,
+      boolean positive) {
     jdbc.update(
         """
-        UPDATE sign_clusters SET sign_code = :code, alpha = :alpha, beta = :beta,
+        UPDATE sign_clusters SET
+          conditions = CASE WHEN sign_code <> :code THEN NULL ELSE conditions END,
+          conditions_confidence = CASE WHEN sign_code <> :code THEN 0 ELSE conditions_confidence END,
+          conditions_observed_at = CASE WHEN sign_code <> :code THEN NULL ELSE conditions_observed_at END,
+          conditions_observation_id = CASE WHEN sign_code <> :code THEN NULL ELSE conditions_observation_id END,
+          conditions_reviewed = CASE WHEN sign_code <> :code THEN FALSE ELSE conditions_reviewed END,
+          sign_code = :code, alpha = :alpha, beta = :beta,
           confidence = :conf, status = :status, lat = :lat, lng = :lng,
           distinct_users = :users, observation_count = observation_count + 1,
-          last_seen_at = GREATEST(last_seen_at, :seen)
+          last_seen_at = CASE WHEN :positive THEN GREATEST(last_seen_at, :seen) ELSE last_seen_at END
         WHERE id = :id
         """,
         new MapSqlParameterSource()
@@ -303,13 +382,20 @@ public class SignRepository {
             .addValue("lat", lat)
             .addValue("lng", lng)
             .addValue("users", distinctUsers)
+            .addValue("positive", positive)
             .addValue("seen", Timestamp.from(seenAt)));
   }
 
   public void setStatus(String clusterId, ClusterStatus status, String signCode, boolean lock) {
     jdbc.update(
         """
-        UPDATE sign_clusters SET status = :status, sign_code = :code,
+        UPDATE sign_clusters SET
+          conditions = CASE WHEN sign_code <> :code THEN NULL ELSE conditions END,
+          conditions_confidence = CASE WHEN sign_code <> :code THEN 0 ELSE conditions_confidence END,
+          conditions_observed_at = CASE WHEN sign_code <> :code THEN NULL ELSE conditions_observed_at END,
+          conditions_observation_id = CASE WHEN sign_code <> :code THEN NULL ELSE conditions_observation_id END,
+          conditions_reviewed = CASE WHEN sign_code <> :code THEN FALSE ELSE conditions_reviewed END,
+          status = :status, sign_code = :code,
           admin_locked = admin_locked OR :lock WHERE id = :id
         """,
         new MapSqlParameterSource()
@@ -370,7 +456,8 @@ public class SignRepository {
         rs.getString("conditions"),
         rs.getInt("observation_count"),
         rs.getInt("distinct_users"),
-        rs.getTimestamp("last_seen_at").toInstant());
+        rs.getTimestamp("last_seen_at").toInstant(),
+        rs.getBoolean("has_sub_sign"));
   }
 
   // ---------- Lô quan sát ----------
@@ -451,9 +538,9 @@ public class SignRepository {
         """
         INSERT INTO observations (id, batch_id, client_id, user_id, kind, sign_code, detector_group,
           probability, vote_share, lat, lng, heading_deg, distance_m, frames, cluster_id,
-          crop_key, sub_sign_key, flags, observed_at)
+          crop_key, sub_sign_key, has_sub_sign, flags, observed_at)
         VALUES (:id, :batch, :client, :user, :kind, :code, :group, :p, :vote, :lat, :lng, :heading,
-          :dist, :frames, :cluster, :crop, :sub, :flags, :at)
+          :dist, :frames, :cluster, :crop, :sub, :hasSub, :flags, :at)
         """,
         new MapSqlParameterSource()
             .addValue("id", o.id())
@@ -473,6 +560,7 @@ public class SignRepository {
             .addValue("cluster", o.clusterId())
             .addValue("crop", o.cropKey())
             .addValue("sub", o.subSignKey())
+            .addValue("hasSub", o.subSignKey() != null)
             .addValue("flags", o.flags())
             .addValue("at", Timestamp.from(o.observedAt())));
   }
@@ -516,6 +604,15 @@ public class SignRepository {
             .addValue("w", weight)
             .addValue("crop", cropKey)
             .addValue("sub", subSignKey));
+  }
+
+  public void addObservationFlag(String observationId, String flag) {
+    jdbc.update(
+        """
+        UPDATE observations SET flags = JSON_ARRAY_APPEND(COALESCE(flags, JSON_ARRAY()), '$', :flag)
+        WHERE id = :id
+        """,
+        Map.of("id", observationId, "flag", flag));
   }
 
   /**

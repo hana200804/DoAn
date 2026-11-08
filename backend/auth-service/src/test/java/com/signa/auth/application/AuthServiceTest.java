@@ -28,6 +28,14 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 class AuthServiceTest {
+  @Test
+  void concurrentDuplicateRegistrationStillReturnsConflict() {
+    when(users.saveAndFlush(any()))
+        .thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate email"));
+    assertThatThrownBy(() -> service.register("a@example.com", "password123", "A"))
+        .isInstanceOfSatisfying(
+            ApiException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.CONFLICT));
+  }
 
   private final PasswordEncoder encoder = new BCryptPasswordEncoder(4);
   private UserRepository users;
@@ -131,5 +139,21 @@ class AuthServiceTest {
     assertThatThrownBy(() -> service.resetPassword("a@example.com", "000000", "brandnewpass"))
         .extracting(e -> ((ApiException) e).code())
         .isEqualTo(ErrorCode.VALIDATION_ERROR);
+  }
+
+  @Test
+  void unicodePasswordsCannotBeSilentlyTruncatedByBcrypt() {
+    String oversized = "ắ".repeat(24) + "A";
+    assertThatThrownBy(() -> service.register("a@example.com", oversized, "A"))
+        .isInstanceOf(ApiException.class);
+    assertThatThrownBy(() -> service.resetPassword("a@example.com", "123456", oversized))
+        .isInstanceOf(ApiException.class);
+    verify(otpStore, never()).verify(anyString(), anyString());
+    verify(users, never()).save(any());
+    User legacy = User.create("a@example.com", encoder.encode(oversized), "A", Role.DRIVER);
+    when(users.findByEmail("a@example.com")).thenReturn(Optional.of(legacy));
+    assertThatThrownBy(() -> service.login("a@example.com", "ắ".repeat(24) + "B", "127.0.0.1"))
+        .isInstanceOf(ApiException.class);
+    verify(sessions, never()).create(any());
   }
 }

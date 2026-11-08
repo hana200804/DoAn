@@ -69,6 +69,9 @@ public class AdminController {
 
   @GetMapping("/reports")
   public List<Report> reports(@RequestParam(defaultValue = "PENDING") String status) {
+    if (!java.util.Set.of("PENDING", "ACCEPTED", "REJECTED").contains(status)) {
+      throw ApiException.validation("status", "trạng thái báo cáo không hợp lệ");
+    }
     return repo.reports(status, PAGE);
   }
 
