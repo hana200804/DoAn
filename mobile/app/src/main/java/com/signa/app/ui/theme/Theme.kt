@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 
 private val LightColorScheme = lightColorScheme(
     primary = SignaBlue,
+    surfaceContainer = Color(0xFFF0F5FD),
     onPrimary = Color.White,
     primaryContainer = SignaLightBlue,
     onPrimaryContainer = SignaNavy,

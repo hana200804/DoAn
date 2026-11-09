@@ -2,16 +2,22 @@
 
 Ứng dụng Android cho người lái: nhận diện biển báo ngay trên điện thoại, cảnh báo bằng giọng nói, xem bản đồ biển báo và dẫn đường.
 
-> **Trạng thái:** đã khởi tạo project Android và bộ giao diện nền tảng. Các chức năng nghiệp vụ bên dưới vẫn là phạm vi dự kiến, chưa được tích hợp.
+> **Trạng thái tuần 2:** khung MVVM + Hilt + Flow; điều hướng, DataStore, Room, Retrofit/OkHttp và đầy đủ tài khoản giả lập có lưu/khôi phục/hết hạn phiên. API client đã kiểm thử bằng MockWebServer; chưa nối backend thật. Xem [ARCHITECTURE.md](ARCHITECTURE.md) để biết cấu trúc hiện tại, cách thử tài khoản và giới hạn nghiệm thu.
+
+Kết quả build và kiểm thử: [Nghiệm thu tuần 2](WEEK2_ACCEPTANCE.md).
 
 ## Tiến độ giao diện
 
 - Có theme sáng/tối, kiểu chữ và hình dạng dùng chung trong `ui/theme/`.
 - Có nút chính, thẻ thông tin, nhãn trạng thái và biểu tượng giới hạn tốc độ trong `ui/components/`.
-- `MainActivity` mở `ui/navigation/SignaApp.kt`: Navigation Compose điều hướng năm tab Lái xe, Bản đồ, Tra cứu, Cài đặt và Tài khoản, có lưu/khôi phục trạng thái tab.
-- Có trang chi tiết biển minh họa và form đăng nhập, đăng ký, quên mật khẩu, nhập OTP/đặt lại mật khẩu, đổi mật khẩu; các nút gửi dữ liệu vẫn vô hiệu hóa.
-- Cài đặt cho phép thử loại xe và công tắc; trạng thái chỉ dùng cho giao diện, chưa lưu bằng DataStore hoặc áp dụng vào nghiệp vụ.
-- Tốc độ và giới hạn hiển thị trạng thái chưa có dữ liệu; camera chưa kết nối. Bản đồ là hình minh họa; chưa tích hợp VietMap, GPS, AI, API hoặc gửi quan sát.
+- `MainActivity` mở `ui/navigation/SignaApp.kt`: Navigation Compose điều hướng năm tab Bản đồ, Lái xe, Tra cứu, Cài đặt và Tài khoản. Mở app chưa có phiên vào khung Đăng nhập/Đăng ký riêng, không có bottom bar. Sau đăng nhập hoặc chủ động chọn khách, khung chính mở ở Bản đồ và có lưu/khôi phục trạng thái tab. Đăng xuất/hết hạn quay về khung xác thực.
+- Các tính năng dữ liệu đi theo `Route → Screen/ViewModel → repository`, thu thập StateFlow theo lifecycle. Chi tiết biển dùng ID ổn định; dữ liệu mẫu tập trung tại `data/fake`.
+- Đăng ký, đăng nhập, đăng xuất, OTP, đặt lại và đổi mật khẩu chạy bằng fake auth cục bộ. Cần đăng ký trước; mã OTP thử nghiệm hiển thị trên màn hình. Room lưu tài khoản đã băm mật khẩu và phiên được mã hóa bằng Android Keystore, có khôi phục/hết hạn.
+- Room lưu cache biển mẫu; API client có DTO, Bearer, timeout và xử lý lỗi HTTP. Có thể chọn RemoteAuthRepository qua cấu hình build.
+- Cài đặt lưu bốn lựa chọn bằng DataStore, có trạng thái tải, lỗi lưu trữ và thử lại.
+- Giao diện áp dụng bản thiết kế xanh/trắng: bản đồ phủ màn hình có thẻ biển nổi, bảng tốc độ nằm ngang, cài đặt theo nhóm và form tài khoản gọn. Có phiên lái xe, hồ sơ và đóng góp để xem trước; dữ liệu mẫu được ghi rõ.
+- Camera, tốc độ và cảnh báo lái xe vẫn ở mức khung. Bản đồ đã dùng VietMap SDK với marker GeoJSON và nút định vị GPS; chưa có key nên chưa tải được bản đồ nền thật. Chưa nối backend biển theo vùng, AI hoặc gửi quan sát. Xem [thiết lập bản đồ](MAP_SETUP.md).
+- Các màn xác thực, Tài khoản và Đóng góp đã áp dụng bố cục ảnh mẫu: icon ô nhập, OTP 6 ô/gửi lại, hồ sơ có loại xe và các hàng chức năng dạng thẻ. Giữ nút “Tiếp tục với khách”.
 - Xem thử bằng cách chạy cấu hình `app` trên thiết bị. `SignaApp` có Preview sáng/tối; `DriveScreen` có thêm Preview cỡ chữ lớn.
 
 ## Mục lục
@@ -135,13 +141,10 @@ Mã yêu cầu tham chiếu [Đặc tả yêu cầu](../docs/02-dac-ta-yeu-cau.m
 
 ## Cài đặt và chạy
 
-> Hướng dẫn chi tiết được bổ sung khi khởi tạo mã nguồn.
-
-Yêu cầu: Android Studio bản ổn định mới nhất, JDK 17, thiết bị thật Android 8.0+ (emulator không đủ để đo hiệu năng camera).
+Yêu cầu theo toolchain hiện tại: Android SDK 37, Oracle JDK 25 đầy đủ (có `jlink`), thiết bị Android 8.0+ hoặc emulator. Gradle daemon được ghim JDK 25 trong `gradle/gradle-daemon-jvm.properties`; không dùng JRE đi kèm extension Java của VS Code. Camera/hiệu năng cần đo trên máy thật ở giai đoạn sau.
 
 ```bash
 cd mobile
-cp local.properties.example local.properties   # điền VIETMAP_API_KEY, API_BASE_URL
 ./gradlew assembleDebug
 ./gradlew installDebug
 ```
@@ -150,16 +153,21 @@ cp local.properties.example local.properties   # điền VIETMAP_API_KEY, API_BA
 
 | Khoá (`local.properties`) | Ý nghĩa |
 | --- | --- |
-| `VIETMAP_API_KEY` | Khoá VietMap SDK |
+| `VIETMAP_API_KEY` | Key VietMap đọc từ file này hoặc biến môi trường cùng tên; cần build lại sau khi thêm key |
+| `VIETMAP_SEARCH_API_KEY` | Key Autocomplete/Place; mặc định dùng key bản đồ khi bỏ trống |
+| `VIETMAP_ROUTE_API_KEY` | Key Route tùy chọn; mặc định dùng key search |
 | `API_BASE_URL` | Địa chỉ nginx của backend: `http://10.0.2.2:8080` trên emulator, `http://<IP máy tính>:8080` trên điện thoại thật cùng mạng |
-| `MODEL_VERSION` | Phiên bản bộ mô hình nhúng sẵn; task Gradle `fetchModels` tải bộ này vào `assets/models/` trước khi build |
+| `MODEL_VERSION` | Dự kiến dùng khi tích hợp mô hình; hiện chưa có task `fetchModels` |
+
+Mặc định dùng fake auth. Chọn backend thật bằng `-Psigna.useFakeBackend=false`; URL có thể truyền qua `-Psigna.apiBaseUrl` hoặc `SIGNA_API_BASE_URL`. Chi tiết request/response và phần cần đối chiếu backend nằm trong [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Kiểm thử
 
 | Loại | Phạm vi | Lệnh |
 | --- | --- | --- |
-| Unit | `WarningEngine`, `Tracker`, ánh xạ nhãn | `./gradlew test` |
-| Instrumented | Chạy mô hình trên ảnh mẫu, Room | `./gradlew connectedAndroidTest` |
+| Unit hiện có | Form/ViewModel, phiên, băm mật khẩu, Retrofit/OkHttp qua MockWebServer | `./gradlew :app:testDebugUnitTest` |
+| Instrumented hiện có | Room, Keystore, tài khoản/OTP, cache, DataStore | `./gradlew :app:connectedDebugAndroidTest` |
+| Build/lint | APK debug và kiểm tra Android | `./gradlew :app:assembleDebug :app:lintDebug` |
 | Thực địa | Video gắn trên xe, đo FPS / cảnh báo sai | Xem [kế hoạch kiểm thử](../docs/08-kiem-thu.md) |
 
 ## Tài liệu liên quan
@@ -167,3 +175,11 @@ cp local.properties.example local.properties   # điền VIETMAP_API_KEY, API_BA
 - [Thiết kế AI — chuỗi xử lý trên thiết bị](../docs/04-thiet-ke-ai.md)
 - [Đặc tả API](../docs/07-api.md)
 - [ADR-0002: Nhận diện trên thiết bị](../docs/adr/0002-nhan-dien-tren-thiet-bi.md)
+
+## Bản đồ hiện tại
+
+Đã có tìm địa chỉ, chọn điểm đến, xem trước tuyến đường, khoảng cách và thời gian dự kiến bằng API VietMap thật, dùng được trong chế độ khách. `DirectionsViewModel` quản lý tác vụ tìm kiếm/chỉ đường; `MapViewModel` quản lý biển cache và định vị; repository và client HTTP nằm trong data. Cấu hình, kiểm chứng và giới hạn hiện tại xem [MAP_SETUP.md](MAP_SETUP.md).
+
+## Camera hiện tại
+
+Màn Lái xe có camera sau CameraX thật, xin quyền khi bắt đầu, tạm dừng/bật lại và nhả tài nguyên khi xuống nền hoặc kết thúc. Điều khiển thiết bị nằm trong `vision/camera/`; chưa có nhận diện AI hoặc tốc độ GPS trong màn Lái xe. Xem [CAMERA_SETUP.md](CAMERA_SETUP.md).

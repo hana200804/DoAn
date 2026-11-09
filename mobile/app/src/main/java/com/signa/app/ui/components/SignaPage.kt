@@ -13,16 +13,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.signa.app.R
 
 @Composable
-fun SignaPage(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun SignaPage(
+    title: String,
+    modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.headlineMedium)
-        SignaStatusLabel(stringResource(R.string.ui_demo_status))
+        if (onBack == null) {
+            SignaWordmark()
+            Text(title, style = MaterialTheme.typography.headlineMedium)
+        } else {
+            SignaBackHeader(title, onBack)
+        }
         content()
     }
 }

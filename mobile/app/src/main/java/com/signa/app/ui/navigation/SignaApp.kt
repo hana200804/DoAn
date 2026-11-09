@@ -1,98 +1,111 @@
 package com.signa.app.ui.navigation
 
-import androidx.annotation.DrawableRes
-import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.key
+import androidx.compose.ui.Alignment
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.signa.app.R
-import com.signa.app.ui.auth.AuthScreen
-import com.signa.app.ui.drive.DriveScreen
-import com.signa.app.ui.map.MapScreen
-import com.signa.app.ui.settings.SettingsScreen
-import com.signa.app.ui.sign.SignDetailScreen
-import com.signa.app.ui.sign.SignLookupScreen
 import com.signa.app.ui.theme.SignaTheme
+import kotlinx.coroutines.launch
 
-private enum class MainDestination(
-    val route: String,
-    @param:StringRes val label: Int,
-    @param:DrawableRes val icon: Int
-) {
-    Drive("drive", R.string.nav_drive, R.drawable.ic_drive),
-    Map("map", R.string.nav_map, R.drawable.ic_map),
-    Sign("sign", R.string.nav_sign, R.drawable.ic_sign),
-    Settings("settings", R.string.nav_settings, R.drawable.ic_settings),
-    Account("account", R.string.nav_account, R.drawable.ic_account)
+@Composable
+fun SignaApp(viewModel: SignaAppViewModel = hiltViewModel()) {
+    val access by viewModel.access.collectAsStateWithLifecycle()
+    SignaAppContent(access, viewModel::continueAsGuest, viewModel::requestSignIn)
 }
 
 @Composable
-fun SignaApp() {
-    val controller = rememberNavController()
-    val entry by controller.currentBackStackEntryAsState()
-    val route = entry?.destination?.route
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                MainDestination.entries.forEach { destination ->
-                    NavigationBarItem(
-                        selected = route == destination.route ||
-                            (route == "sign-detail" && destination == MainDestination.Map) ||
-                            (route in listOf("register", "forgot", "reset", "change-password") && destination == MainDestination.Account),
-                        onClick = {
-                            controller.navigate(destination.route) {
-                                popUpTo(controller.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        icon = { Icon(painterResource(destination.icon), contentDescription = null) },
-                        label = { Text(stringResource(destination.label)) }
-                    )
-                }
+internal fun SignaAppContent(
+    access: AppAccess,
+    onGuest: () -> Unit,
+    onSignInRequired: () -> Unit
+) {
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val resources = LocalResources.current
+    val onMessage: (Int) -> Unit = { message ->
+        scope.launch { snackbar.showSnackbar(resources.getString(message)) }
+    }
+    when (access) {
+        AppAccess.Loading -> Scaffold { padding ->
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
         }
-    ) { padding ->
-        NavHost(controller, startDestination = "drive", modifier = Modifier.padding(padding)) {
-            composable("drive") { DriveScreen() }
-            composable("map") { MapScreen(onOpenSign = { controller.navigate("sign-detail") }) }
-            composable("sign") { SignLookupScreen() }
-            composable("settings") { SettingsScreen() }
-            composable("account") {
-                AuthScreen(
-                    onRegister = { controller.navigate("register") },
-                    onForgot = { controller.navigate("forgot") },
-                    onChangePassword = { controller.navigate("change-password") }
-                )
+        AppAccess.SignedOut -> {
+            val controller = rememberNavController()
+            Scaffold(containerColor = MaterialTheme.colorScheme.surface, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+                AuthNavHost(controller, onGuest, onMessage, Modifier.padding(padding))
             }
-            composable("register") { AuthScreen(mode = "register", onBack = { controller.popBackStack() }) }
-            composable("forgot") {
-                AuthScreen(mode = "forgot", onBack = { controller.popBackStack() }, onReset = { controller.navigate("reset") })
-            }
-            composable("reset") { AuthScreen(mode = "reset", onBack = { controller.popBackStack() }) }
-            composable("change-password") { AuthScreen(mode = "change", onBack = { controller.popBackStack() }) }
-            composable("sign-detail") { SignDetailScreen(onBack = { controller.popBackStack() }) }
+        }
+        AppAccess.Guest, AppAccess.Authenticated -> key(access) {
+            MainApp(snackbar, onMessage, onSignInRequired)
         }
     }
 }
 
-@Preview(showBackground = true, name = "App Light")
-@Preview(showBackground = true, name = "App Dark", uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun MainApp(
+    snackbar: SnackbarHostState,
+    onMessage: (Int) -> Unit,
+    onSignInRequired: () -> Unit
+) {
+    val controller = rememberNavController()
+    val entry by controller.currentBackStackEntryAsState()
+    val selected = MainDestination.forRoute(entry?.destination?.route)
+    val scope = rememberCoroutineScope()
+    val previewMessage = stringResource(R.string.action_preview_message)
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.surface,
+        snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = {
+            if (selected != null) {
+                SignaBottomBar(
+                    selected = selected,
+                    onDestinationSelected = { destination ->
+                        controller.navigate(destination.route) {
+                            popUpTo(controller.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
+        }
+    ) { padding ->
+        SignaNavHost(
+            controller = controller,
+            onPreviewAction = { scope.launch { snackbar.showSnackbar(previewMessage) } },
+            onMessage = onMessage,
+            onSignInRequired = onSignInRequired,
+            modifier = Modifier.padding(padding)
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Sign in first")
+@Preview(showBackground = true, name = "Dark", uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES)
 @Composable
 private fun SignaAppPreview() {
-    SignaTheme { SignaApp() }
+    SignaTheme { SignaAppContent(AppAccess.SignedOut, {}, {}) }
 }
